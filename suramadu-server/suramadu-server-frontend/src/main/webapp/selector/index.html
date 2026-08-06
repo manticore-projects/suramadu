@@ -6,20 +6,51 @@
     <meta charset="utf-8"/>
     <link rel="stylesheet" href="css/style.css"/>
     <link rel="icon" href="favicon.ico"/>
+    <style>
+        /* Source and licence notice:
+           AGPL-3.0 section 13 requires the source offer to be presented to
+           users interacting with this server over a network. */
+        .source-notice {
+            position: fixed;
+            right: 0.5rem;
+            bottom: 0.4rem;
+            z-index: 2147483000;
+            font: 400 11px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: #6e6e8a;
+            background: rgba(255, 255, 255, 0.82);
+            border-radius: 4px;
+            padding: 2px 7px;
+        }
+
+        .source-notice a {
+            color: #6e6e8a;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .source-notice a:hover {
+            color: #ff420e;
+        }
+    </style>
 </head>
 <body>
 
 <div class="suramadu-element">
     <div class="suramadu-element-content">
-	    <div class="ws-modal-container">
-	        <div id="commonDialog" class="ws-modal ws-selector-modal" role="dialog" aria-labelledby="commonDialog-title" aria-describedby="commonDialog-description">
-	            <div id="suramadu-header" class="ws-selector-header  ws-left"></div>
-	            <div id="suramadu-links" class="ws-selector-admin  ws-right"></div>
-	            <div id="suramadu-content" class="ws-selector-content"><div class="ws-spinner"><div class="ws-spinner-dot-1"></div> <div class="ws-spinner-dot-2"></div></div></div>
-	        </div>
-	    </div>
-	</div>
+        <div class="ws-modal-container">
+            <div id="commonDialog" class="ws-modal ws-selector-modal" role="dialog" aria-labelledby="commonDialog-title" aria-describedby="commonDialog-description">
+                <div id="suramadu-header" class="ws-selector-header  ws-left"></div>
+                <div id="suramadu-links" class="ws-selector-admin  ws-right"></div>
+                <div id="suramadu-content" class="ws-selector-content"><div class="ws-spinner"><div class="ws-spinner-dot-1"></div> <div class="ws-spinner-dot-2"></div></div></div>
+            </div>
+        </div>
+    </div>
 </div>
 <script src="javascript/suramadu-selector.js"></script>
+<div class="source-notice">
+    Delivered by <a href="https://github.com/manticore-projects/suramadu" target="_blank" rel="noopener">Suramadu</a>,
+    a fork of WebSwing v20.2.5 under the
+    <a href="https://www.gnu.org/licenses/agpl-3.0.en.html" target="_blank" rel="noopener">AGPL v3</a>.
+</div>
 </body>
 </html>

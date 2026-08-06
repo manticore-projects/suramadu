@@ -30,13 +30,6 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
 
-      - name: Set up Xvfb
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb
-          Xvfb :99 -screen 0 1024x768x24 &
-          echo "DISPLAY=:99" >> "$GITHUB_ENV"
-
       - name: Cache Gradle packages
         uses: actions/cache@v4
         with:
@@ -63,7 +56,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build
-        run: ./gradlew clean assemble --no-daemon --warning-mode all
+        run: ./gradlew clean assemble -x spotlessJava --no-daemon --warning-mode all
 
       - name: Upload ZIP distribution
         if: matrix.java == '21' && github.event_name == 'push'

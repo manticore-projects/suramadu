@@ -6,10 +6,10 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
     <!--
         CSP: script-src 'self' blocks injected inline/external scripts.
-        All JS lives in javascript/webswing-init.js — no unsafe-inline needed.
-        connect-src includes ws:/wss: to allow the Webswing WebSocket connection.
+        All JS lives in javascript/suramadu-init.js — no unsafe-inline needed.
+        connect-src includes ws:/wss: to allow the WebSocket connection.
         frame-src 'self' is required for the file-download iframe: the Java app
-        writes a temp file and Webswing serves it via /file?id=... in an iframe;
+        writes a temp file and the server serves it via /file?id=... in an iframe;
         without this directive default-src 'none' blocks the frame and the
         browser never receives the download.
     -->
@@ -20,6 +20,32 @@
     <link rel="stylesheet" href="css/style.css"/>
     <link rel="icon" href="favicon.ico"/>
     <link rel="manifest" href="manifest.json"/>
+    <style>
+        /* Source and licence notice:
+           AGPL-3.0 section 13 requires the source offer to be presented to
+           users interacting with this server over a network. */
+        .source-notice {
+            position: fixed;
+            right: 0.5rem;
+            bottom: 0.4rem;
+            z-index: 2147483000;
+            font: 400 11px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+            color: #6e6e8a;
+            background: rgba(255, 255, 255, 0.82);
+            border-radius: 4px;
+            padding: 2px 7px;
+        }
+
+        .source-notice a {
+            color: #6e6e8a;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+
+        .source-notice a:hover {
+            color: #ff420e;
+        }
+    </style>
 </head>
 
 <body>
@@ -38,11 +64,17 @@
 
 <!--
     Single external script covers webswingInstance0 config and the
-    webswing-embed.js loader.
-    data-webswing-global-var tells webswing-embed.js to expose its API as window.webswing.
+    suramadu-embed.js loader.
+    data-webswing-global-var tells suramadu-embed.js to expose its API as window.webswing.
 -->
 <script data-webswing-global-var="webswing" src="webswing-loader-stub.js"></script>
 <script src="javascript/suramadu-init.js"></script>
+
+<div class="source-notice">
+    Delivered by <a href="https://github.com/manticore-projects/suramadu" target="_blank" rel="noopener">Suramadu</a>,
+    a fork of WebSwing v20.2.5 under the
+    <a href="https://www.gnu.org/licenses/agpl-3.0.en.html" target="_blank" rel="noopener">AGPL v3</a>.
+</div>
 </body>
 
 </html>
