@@ -1,0 +1,129 @@
+plugins {
+    id 'distribution'
+    id 'com.gorylenko.gradle-git-properties' version 'latest.release'
+}
+
+// This module produces distribution archives, not a jar or resources.
+// Disable processResources to avoid output directory conflicts.
+processResources.enabled = false
+
+dependencies {
+    implementation project(':suramadu-server:suramadu-server-war')
+    implementation project(':suramadu-server:suramadu-server-security')
+    implementation project(':suramadu-api')
+}
+
+// ── Git info (JSON format) ───────────────────────────────────────────
+gitProperties {
+    failOnNoGitDirectory = false
+    gitPropertiesResourceDir = layout.buildDirectory.dir('dist-meta').get().asFile
+    gitPropertiesName = 'git.info'
+}
+
+// ── Copy version.info with token replacement ─────────────────────────
+tasks.register('copyVersionInfo', Copy) {
+    from('src/main/resources') {
+        include 'version.info'
+        expand(project: [version: project.version])
+    }
+    into layout.buildDirectory.dir('dist-meta')
+}
+
+// ── Main distribution ────────────────────────────────────────────────
+def warProject = project(':suramadu-server:suramadu-server-war')
+
+distributions {
+    main {
+        distributionBaseName = "suramadu"
+        contents {
+            from(warProject.layout.buildDirectory.dir('libs')) {
+                include '*.war'
+                into '/'
+            }
+
+            from(project(':suramadu-server:suramadu-server-security').layout.buildDirectory.dir('libs')) {
+                include "suramadu-server-security-${project.version}.jar"
+                into '/api'
+            }
+
+            from(project(':suramadu-api').layout.buildDirectory.dir('libs')) {
+                include "suramadu-api-${project.version}.jar"
+                into '/api'
+            }
+
+            from('src/main/demo') {
+                into '/'
+            }
+
+            from(layout.buildDirectory.dir('dist-meta')) {
+                include 'git.info'
+                include 'version.info'
+                into '/'
+            }
+
+            // FIX: Replaced 'mode' with 'fileMode' for Gradle 9 configuration compliance
+            filesMatching('**/*.sh') {
+                permissions {
+                    unix('rwxr-xr-x')
+                }
+            }
+        }
+    }
+}
+
+distZip {
+    dependsOn ':suramadu-server:suramadu-server-war:assemble', 'copyVersionInfo', 'generateGitProperties'
+    destinationDirectory = layout.buildDirectory.dir('dist')
+}
+
+distTar {
+    dependsOn ':suramadu-server:suramadu-server-war:assemble', 'copyVersionInfo', 'generateGitProperties'
+    destinationDirectory = layout.buildDirectory.dir('dist')
+    compression = Compression.BZIP2
+    archiveExtension = 'tar.bz2'
+}
+
+// Skip deploy (matches Maven config)
+tasks.withType(PublishToMavenRepository).configureEach { enabled = false }
+
+// Disable jar — this is a distribution-only module
+tasks.withType(Jar).configureEach { enabled = false }
+
+// ── Docker profile ───────────────────────────────────────────────────
+if (project.hasProperty('docker')) {
+    tasks.register('copyDockerfile', Copy) {
+        from 'src/main/docker'
+        include 'Dockerfile'
+        into "${projectDir}/dist/docker"
+    }
+
+    distributions {
+        docker {
+            distributionBaseName = 'suramadu'
+            contents {
+                from(warProject.layout.buildDirectory.dir('libs')) {
+                    include '*.war'
+                    into '/'
+                }
+                from(layout.buildDirectory.dir('dist-meta')) {
+                    include 'git.info'
+                    include 'version.info'
+                    into '/' // FIX: Provided explicit destination path structure
+                }
+            }
+        }
+    }
+
+    tasks.named('dockerDistZip') {
+        destinationDirectory = file("${projectDir}/dist/docker")
+    }
+
+    // FIX: Configured directly at task-definition root instead of wrapping in invalid execution hooks
+    tasks.register('dockerBuild', Exec) {
+        dependsOn 'dockerDistZip', 'copyDockerfile'
+        workingDir "${projectDir}/dist/docker"
+        commandLine 'docker', 'build', '-t', 'manticore-projects/suramadu', '.'
+    }
+
+    assemble.dependsOn 'dockerBuild'
+}

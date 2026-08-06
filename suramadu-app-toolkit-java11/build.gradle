@@ -1,0 +1,11 @@
+dependencies {
+    implementation project(':suramadu-app-toolkit')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.add('--add-exports=java.desktop/sun.awt.windows=ALL-UNNAMED')
+}
+
+jar {
+    archiveBaseName = 'suramadu-app-toolkit-java11'
+}

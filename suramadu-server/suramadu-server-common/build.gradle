@@ -1,0 +1,23 @@
+apply plugin: 'webswing.protobuf-conventions'
+
+dependencies {
+    implementation "org.bitbucket.b_c:jose4j:${jose4jVersion}"
+    api(project(':suramadu-app-toolkit')) {
+        exclude group: 'rt-win-shell', module: 'rt-win-shell'
+        exclude group: 'org.webswing', module: 'modpatch-jdk-jsobject'
+        exclude group: 'org.webswing', module: 'modpatch-java-desktop'
+    }
+
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "tools.jackson.core:jackson-databind:${jacksonVersion}"
+    implementation "org.slf4j:slf4j-api:${slf4jVersion}"
+    implementation "org.apache.commons:commons-lang3:${commonsLang3Version}"
+    implementation "org.apache.commons:commons-collections4:${commonsCollections4Version}"
+    implementation "commons-io:commons-io:${commonsIoVersion}"
+    implementation "com.google.guava:guava:${guavaVersion}"
+    implementation "com.google.inject:guice:${guiceVersion}"
+    implementation 'com.github.weisj:jsvg:+'
+    implementation 'com.manticore-projects.tools:zpng-java:+'
+}
+
+createRegenerateProtoTask('src/main/protobuf', 'src/main/java')

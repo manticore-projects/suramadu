@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html class="ws-fullscreen" lang="en">
+
+<head>
+    <title>VBox</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <!--
+        CSP: script-src 'self' blocks injected inline/external scripts.
+        All JS lives in javascript/webswing-init.js — no unsafe-inline needed.
+        connect-src includes ws:/wss: to allow the Webswing WebSocket connection.
+        frame-src 'self' is required for the file-download iframe: the Java app
+        writes a temp file and Webswing serves it via /file?id=... in an iframe;
+        without this directive default-src 'none' blocks the frame and the
+        browser never receives the download.
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; connect-src 'self' ws: wss: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; worker-src blob:; frame-src 'self';">
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+    <link rel="stylesheet" href="css/style.css"/>
+    <link rel="icon" href="favicon.ico"/>
+    <link rel="manifest" href="manifest.json"/>
+</head>
+
+<body>
+<div class="suramadu-element" data-webswing-instance="webswingInstance0">
+    <div id="loading" class="ws-modal-container">
+        <div class="ws-login">
+            <div class="ws-login-content">
+                <div class="ws-spinner">
+                    <div class="ws-spinner-dot-1"></div>
+                    <div class="ws-spinner-dot-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!--
+    Single external script covers webswingInstance0 config and the
+    webswing-embed.js loader.
+    data-webswing-global-var tells webswing-embed.js to expose its API as window.webswing.
+-->
+<script data-webswing-global-var="webswing" src="webswing-loader-stub.js"></script>
+<script src="javascript/suramadu-init.js"></script>
+</body>
+
+</html>

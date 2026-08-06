@@ -1,0 +1,11 @@
+dependencies {
+    api project(':suramadu-server:suramadu-server-common')
+
+    implementation "com.google.inject:guice:${guiceVersion}"
+    implementation "org.apache.logging.log4j:log4j-api:${log4jVersion}"
+    implementation "org.apache.logging.log4j:log4j-core:${log4jVersion}"
+    implementation "org.apache.logging.log4j:log4j-slf4j2-impl:${log4jVersion}"
+    implementation "commons-logging:commons-logging:${commonsLoggingVersion}"
+    implementation "commons-io:commons-io:${commonsIoVersion}"
+    implementation "org.apache.commons:commons-lang3:${commonsLang3Version}"
+}

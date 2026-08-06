@@ -1,0 +1,22 @@
+// modpatch-jdk-jsobject: replacement for netscape.javascript.JSObject
+// (patched into jdk.jsobject module via --patch-module)
+//
+// --patch-module: tells javac these sources belong to jdk.jsobject
+// --add-reads:    lets jdk.jsobject see classes from the unnamed module (suramadu-app-toolkit)
+
+dependencies {
+    compileOnly project(':suramadu-app-toolkit')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.addAll([
+        '--patch-module',
+        "jdk.jsobject=${sourceSets.main.java.srcDirs.first()}",
+        '--add-reads',
+        'jdk.jsobject=ALL-UNNAMED',
+    ])
+}
+
+jar {
+    archiveBaseName = 'modpatch-jdk-jsobject'
+}

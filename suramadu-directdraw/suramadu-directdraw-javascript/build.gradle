@@ -1,0 +1,24 @@
+apply plugin: 'webswing.node-conventions'
+
+dependencies {
+    implementation project(':suramadu-directdraw:suramadu-directdraw-swing')
+    testImplementation("com.manticore-projects.tools:zpng-java:+")
+    testImplementation project(':suramadu-app-services')
+    testImplementation project(':suramadu-app-toolkit')
+    testImplementation "tools.jackson.core:jackson-databind:${jacksonVersion}"
+    testImplementation "commons-io:commons-io:${commonsIoVersion}"
+    testImplementation "commons-codec:commons-codec:${commonsCodecVersion}"
+    testImplementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+}
+
+processResources.dependsOn 'npmBuild'
+
+tasks.register('generateTestJson', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.webswing.TestJsonGenerator'
+    args file('src/test/webapp/generated/tests.json').absolutePath
+    jvmArgs(project.ext.jvmAllModuleArgs)
+}
+
+assemble.dependsOn 'generateTestJson'

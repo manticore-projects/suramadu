@@ -1,0 +1,40 @@
+dependencies {
+    implementation project(':suramadu-app-toolkit')
+    implementation project(':suramadu-app-toolkit-fx-java11')
+    implementation project(':suramadu-app-toolkit-java11')
+    implementation project(':suramadu-modpatch:modpatch-jdk-jsobject')
+}
+
+jar {
+    archiveBaseName = 'suramadu-app-launcher'
+    archiveVersion = ''
+}
+
+tasks.register('copySwingBoot', Copy) {
+    from configurations.runtimeClasspath
+    into layout.buildDirectory.dir('WEB-INF/swing-boot')
+}
+
+tasks.register('copyJarToSwingBoot', Copy) {
+    dependsOn jar
+    from jar
+    into layout.buildDirectory.dir('WEB-INF/swing-boot')
+}
+
+assemble.dependsOn 'copySwingBoot', 'copyJarToSwingBoot'
+
+if (project.hasProperty('update')) {
+    def warDir = rootProject.file("suramadu-server/suramadu-server-war/build/libs/exploded/${suramaduWarName}")
+
+    tasks.register('copyToRunningJetty', Copy) {
+        dependsOn assemble
+        from layout.buildDirectory.dir('WEB-INF/swing-boot')
+        into "${warDir}/WEB-INF/swing-boot"
+    }
+    tasks.register('copyToRunningJettyLib', Copy) {
+        dependsOn assemble
+        from layout.buildDirectory.dir('WEB-INF/swing-boot')
+        into "${warDir}/WEB-INF/swing-lib"
+    }
+    assemble.dependsOn 'copyToRunningJetty', 'copyToRunningJettyLib'
+}

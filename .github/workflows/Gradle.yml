@@ -53,8 +53,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            webswing-directdraw/webswing-directdraw-javascript/node_modules
-            webswing-server/webswing-server-frontend/node_modules
+            suramadu-directdraw/suramadu-directdraw-javascript/node_modules
+            suramadu-server/suramadu-server-frontend/node_modules
           key: node-${{ runner.os }}-${{ hashFiles('**/package-lock.json', '**/package.json') }}
           restore-keys: |
             node-${{ runner.os }}-
@@ -70,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: zip
-          path: build/dist/webswing-*.zip
+          path: build/dist/suramadu-*.zip
           retention-days: 365
           if-no-files-found: warn
 
@@ -79,6 +79,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tar
-          path: build/dist/webswing-*.tar.bz2
+          path: build/dist/suramadu-*.tar.bz2
           retention-days: 365
           if-no-files-found: warn

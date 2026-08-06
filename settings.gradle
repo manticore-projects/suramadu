@@ -14,33 +14,33 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = 'webswing'
+rootProject.name = 'suramadu'
 
 // ── Flat modules ──────────────────────────────────────────────────────
-include 'webswing-api'
-include 'webswing-app-toolkit'
-include 'webswing-app-toolkit-fx'
-include 'webswing-app-toolkit-fx-java11'
-include 'webswing-app-toolkit-java11'
-include 'webswing-app-launcher'
-include 'webswing-app-services'
+include 'suramadu-api'
+include 'suramadu-app-toolkit'
+include 'suramadu-app-toolkit-fx'
+include 'suramadu-app-toolkit-fx-java11'
+include 'suramadu-app-toolkit-java11'
+include 'suramadu-app-launcher'
+include 'suramadu-app-services'
 
 // ── Directdraw (nested) ──────────────────────────────────────────────
-include 'webswing-directdraw:webswing-directdraw-swing'
-include 'webswing-directdraw:webswing-directdraw-javascript'
+include 'suramadu-directdraw:suramadu-directdraw-swing'
+include 'suramadu-directdraw:suramadu-directdraw-javascript'
 
 // ── Server (nested) ──────────────────────────────────────────────────
-include 'webswing-server:webswing-server-common'
-include 'webswing-server:webswing-sessionpool-api'
-include 'webswing-server:webswing-server-api'
-include 'webswing-server:webswing-server-security'
-include 'webswing-server:webswing-server-launcher'
-include 'webswing-server:webswing-server-frontend'
-include 'webswing-server:webswing-server-war'
+include 'suramadu-server:suramadu-server-common'
+include 'suramadu-server:suramadu-sessionpool-api'
+include 'suramadu-server:suramadu-server-api'
+include 'suramadu-server:suramadu-server-security'
+include 'suramadu-server:suramadu-server-launcher'
+include 'suramadu-server:suramadu-server-frontend'
+include 'suramadu-server:suramadu-server-war'
 
 // ── Modpatch (nested) ────────────────────────────────────────────────
-include 'webswing-modpatch:modpatch-java-desktop'
-include 'webswing-modpatch:modpatch-jdk-jsobject'
+include 'suramadu-modpatch:modpatch-java-desktop'
+include 'suramadu-modpatch:modpatch-jdk-jsobject'
 
 // ── Assembly ─────────────────────────────────────────────────────────
-include 'webswing-assembly'
+include 'suramadu-assembly'
