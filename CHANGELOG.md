@@ -455,7 +455,7 @@ Changelog of webswing.
 
 * updated log4j to version 2.13.2 [CVE-2020-9488] 
 * resolves @149: Admin Console Logs me out when Removing App 
-* resolves @156: fix resize after webswing-element is inits with 0 size 
+* resolves @156: fix resize after suramadu-element is inits with 0 size 
 * resolves @157: Allow using complex custom args as variables in webswing.config 
 * resolves @144: REST API for number of active sessions 
 * resolves @154: Application stops responding if WebWindow.handleWebActionEvent blocks 
@@ -569,7 +569,7 @@ Changelog of webswing.
 * New improved SAML2 security module with SLO and SP-metadata support. 
 * Admin console is now standalone and can be removed. 
 * Replaced RequireJs with Webpack and partial conversion to Typescript 
-* Reduced size of webswing-server.war binary 
+* Reduced size of suramadu-server.war binary 
 * More precise text rendering in DirectDraw mode 
 * Other small improvements &amp; bug fixes 
 
@@ -3881,7 +3881,7 @@ Changelog of webswing.
 
 [b3970](https://github.com/manticore-projects/webswing/commit/b397059a9342dc7) Andrey Breskalenko *2015-09-25 15:52:00*
 
-**changed spaces to tabs in webswing-dd**
+**changed spaces to tabs in suramadu-dd**
 
 
 [58ade](https://github.com/manticore-projects/webswing/commit/58ade72549a9a14) Andrey Breskalenko *2015-09-25 15:25:43*
@@ -3909,7 +3909,7 @@ Changelog of webswing.
 **merged remote-tracking branch 'upstream/master'**
 
 * Conflicts: 
-* webswing-app-launcher/src/main/java/org/webswing/SwingMain.java 
+* suramadu-app-launcher/src/main/java/org/webswing/SwingMain.java 
 
 [96fa7](https://github.com/manticore-projects/webswing/commit/96fa78dda6c5010) Andrey Breskalenko *2015-09-24 14:20:40*
 

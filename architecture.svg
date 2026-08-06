@@ -53,7 +53,7 @@
   <rect x="40" y="255" width="720" height="160" rx="8" fill="#ffffff" stroke="#030146" stroke-width="1.5"/>
   <path d="M40,263 Q40,255 48,255 L752,255 Q760,255 760,263 L760,287 L40,287 Z" fill="#030146"/>
   <circle cx="60" cy="271" r="3" fill="#ff420e"/>
-  <text x="73" y="275" fill="#ffffff" font-size="13" font-weight="700" letter-spacing="1.5">WEBSWING SERVER</text>
+  <text x="73" y="275" fill="#ffffff" font-size="13" font-weight="700" letter-spacing="1.5">SURAMADU SERVER</text>
   <text x="227" y="275" fill="#ffffff" font-size="12">Jetty 12.1 · Conscrypt TLS · HTTP/2 via ALPN</text>
 
   <rect x="71" y="306" width="220" height="95" rx="5" fill="#030146" opacity="0.05"/>

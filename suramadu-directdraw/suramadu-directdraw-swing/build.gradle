@@ -1,0 +1,21 @@
+apply plugin: 'webswing.protobuf-conventions'
+
+dependencies {
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "commons-codec:commons-codec:${commonsCodecVersion}"
+    implementation 'org.apache.bcel:bcel:+'
+    implementation("com.manticore-projects.tools:zpng-java:+")
+}
+
+createRegenerateProtoTask('../src/proto/javascript', 'src/main/java')
+
+if (project.hasProperty('update')) {
+    def warDir = rootProject.file("suramadu-server/suramadu-server-war/build/libs/exploded/${suramaduWarName}")
+
+    tasks.register('copyToRunningJetty', Copy) {
+        dependsOn jar
+        from jar
+        into "${warDir}/WEB-INF/swing-lib"
+    }
+    assemble.dependsOn 'copyToRunningJetty'
+}

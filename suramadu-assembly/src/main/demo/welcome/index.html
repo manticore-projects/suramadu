@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Suramadu</title>
+    <meta name="description" content="Run Java Swing applications in a web browser.">
+
+    <style>
+        :root {
+            --navy: #030146;
+            --orange: #ff420e;
+            --ink: #1c1c2e;
+            --muted: #6e6e8a;
+            --rule: #e2e2ec;
+            --bg: #ffffff;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --navy: #7b7bbd;
+                --orange: #ff6b3d;
+                --ink: #e8e8f2;
+                --muted: #9a9ab5;
+                --rule: #24243c;
+                --bg: #0e0e1e;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: "Roboto Slab", Georgia, serif;
+            font-size: 17px;
+            line-height: 1.65;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .wrap {
+            max-width: 46rem;
+            margin: 0 auto;
+            padding: 4rem 1.5rem 5rem;
+        }
+
+        header {
+            border-bottom: 2px solid var(--rule);
+            padding-bottom: 1.75rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .wordmark {
+            font-family: "Roboto Medium", "Roboto", -apple-system, sans-serif;
+            font-weight: 500;
+            font-size: 2.6rem;
+            letter-spacing: -0.02em;
+            color: var(--navy);
+            margin: 0;
+            line-height: 1.1;
+        }
+
+        .wordmark .dot {
+            color: var(--orange);
+        }
+
+        .tagline {
+            font-family: "Roboto", -apple-system, sans-serif;
+            font-size: 1.05rem;
+            color: var(--muted);
+            margin: 0.4rem 0 0;
+        }
+
+        h2 {
+            font-family: "Roboto Medium", "Roboto", -apple-system, sans-serif;
+            font-weight: 500;
+            font-size: 1.15rem;
+            color: var(--navy);
+            margin: 2.5rem 0 0.75rem;
+        }
+
+        p {
+            margin: 0 0 1rem;
+        }
+
+        a {
+            color: var(--navy);
+            text-decoration: none;
+            border-bottom: 1px solid var(--rule);
+        }
+
+        a:hover {
+            color: var(--orange);
+            border-bottom-color: var(--orange);
+        }
+
+        ul {
+            margin: 0 0 1rem;
+            padding-left: 1.25rem;
+        }
+
+        li {
+            margin-bottom: 0.35rem;
+        }
+
+        code {
+            font-family: ui-monospace, "SF Mono", Menlo, monospace;
+            font-size: 0.88em;
+            background: var(--rule);
+            padding: 0.12em 0.4em;
+            border-radius: 3px;
+        }
+
+        footer {
+            margin-top: 3.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--rule);
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+
+        footer p {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="wrap">
+
+    <header>
+        <h1 class="wordmark">Suramadu<span class="dot">.</span></h1>
+        <p class="tagline">Swing in the Browser</p>
+    </header>
+
+    <p>Suramadu runs Java Swing applications on the server and delivers them to a browser as pure
+        HTML5. The application runs unchanged; the browser draws the window and sends back mouse
+        and keyboard input. No plugins, no client installation, no changes to application source.</p>
+
+    <p>This is the default landing page of a fresh installation. Once an application is configured
+        it will be served from its own path.</p>
+
+    <h2>Getting started</h2>
+
+    <ul>
+        <li>Configure your application in <code>suramadu.config</code>.</li>
+        <li>Adjust server settings in <code>suramadu.properties</code> and
+            <code>jetty.properties</code>.</li>
+        <li>Restart with <code>./run.sh restart</code>.</li>
+    </ul>
+
+    <h2>Origin</h2>
+
+    <p>Suramadu is derived from WebSwing v20.2.5, the last release published under the GNU Affero
+        General Public License v3. All credit for the original architecture and implementation
+        belongs to its authors.</p>
+
+    <p>Suramadu is not affiliated with, endorsed by, or supported by Webswing Limited or
+        Webswing s.r.o.</p>
+
+    <h2>Licence and source</h2>
+
+    <p>Suramadu is licensed under the
+        <a href="https://www.gnu.org/licenses/agpl-3.0.en.html">GNU Affero General Public
+            License v3</a>. If you interact with this server over a network you are entitled to the
+        complete corresponding source of the version running here, under section 13 of that
+        licence.</p>
+
+    <p>Source:
+        <a href="https://github.com/manticore-projects/suramadu">github.com/manticore-projects/suramadu</a>
+    </p>
+
+    <footer>
+        <p>Maintained by <a href="https://manticore-projects.com">Manticore Projects</a>.</p>
+    </footer>
+
+</div>
+
+</body>
+</html>

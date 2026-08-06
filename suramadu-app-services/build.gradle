@@ -1,0 +1,67 @@
+dependencies {
+    // provided in Maven — needed to compile against but should NOT
+    // end up in swing-lib (it's already in swing-boot)
+    compileOnly(project(':suramadu-app-toolkit')) {
+        exclude group: 'org.webswing', module: 'modpatch-jdk-jsobject'
+    }
+    implementation project(':suramadu-app-launcher')
+    implementation project(':suramadu-directdraw:suramadu-directdraw-swing')
+    implementation(project(':suramadu-server:suramadu-server-common')) {
+        exclude group: 'org.webswing', module: 'modpatch-jdk-jsobject'
+    }
+
+    implementation "org.glassfish.tyrus:tyrus-client:${tyrusVersion}"
+    implementation "org.glassfish.tyrus:tyrus-container-jdk-client:${tyrusVersion}"
+    implementation "com.google.protobuf:protobuf-java:${protobufVersion}"
+    implementation "tools.jackson.core:jackson-databind:${jacksonVersion}"
+    implementation "commons-io:commons-io:${commonsIoVersion}"
+    implementation "commons-codec:commons-codec:${commonsCodecVersion}"
+    implementation "org.apache.commons:commons-lang3:${commonsLang3Version}"
+    implementation 'org.apache.bcel:bcel:+'
+    implementation "com.google.guava:guava:${guavaVersion}"
+    implementation 'com.manticore-projects.tools:zpng-java:+'
+    implementation "org.slf4j:slf4j-api:${slf4jVersion}"
+    implementation 'at.yawk.lz4:lz4-java:+'
+
+    testImplementation 'io.github.lukehutch:fast-classpath-scanner:2.18.1'
+}
+
+jar {
+    archiveBaseName = 'suramadu-app-services'
+    archiveVersion = ''
+}
+
+// ── swing-lib: runtime deps MINUS what's already in swing-boot ───────
+// In Maven, suramadu-app-toolkit was <scope>provided</scope>, meaning toolkit
+// and its transitives (suramadu-api, modpatch-java-desktop) were excluded from
+// the dependency copy. The plain toolkit-fx jar also leaks as a transitive of
+// toolkit-fx-java11. We filter these out by filename pattern.
+tasks.register('copySwingLib', Copy) {
+    from(configurations.runtimeClasspath) {
+        // Already in swing-boot — exclude from swing-lib
+        exclude '**/suramadu-api-*.jar'                   // transitive of toolkit
+        exclude '**/modpatch-java-desktop-*.jar'          // transitive of toolkit
+        exclude '**/suramadu-app-toolkit-[0-9]*.jar'      // toolkit itself (won't match -fx- or -java11-)
+        exclude '**/suramadu-app-toolkit-fx-[0-9]*.jar'   // plain fx jar (won't match fx-java11-)
+    }
+    into layout.buildDirectory.dir('WEB-INF/swing-lib')
+}
+
+tasks.register('copyJarToSwingLib', Copy) {
+    dependsOn jar
+    from jar
+    into layout.buildDirectory.dir('WEB-INF/swing-lib')
+}
+
+assemble.dependsOn 'copySwingLib', 'copyJarToSwingLib'
+
+if (project.hasProperty('update')) {
+    def warDir = rootProject.file("suramadu-server/suramadu-server-war/build/libs/exploded/${suramaduWarName}")
+
+    tasks.register('copyToRunningJetty', Copy) {
+        dependsOn assemble
+        from layout.buildDirectory.dir('WEB-INF')
+        into "${warDir}/WEB-INF"
+    }
+    assemble.dependsOn 'copyToRunningJetty'
+}

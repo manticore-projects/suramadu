@@ -1,0 +1,22 @@
+import org.gradle.internal.os.OperatingSystem
+
+def javafxPlatform = OperatingSystem.current().with {
+    if (isLinux()) {
+        return 'linux'
+    }
+    if (isMacOsX()) {
+        return 'mac'
+    }
+    if (isWindows()) {
+        return 'win'
+    }
+    return 'linux'
+}
+
+dependencies {
+    implementation project(':suramadu-app-toolkit-fx')
+    compileOnly "org.openjfx:javafx-graphics:11.0.2:${javafxPlatform}"
+    compileOnly "org.openjfx:javafx-controls:11.0.2:${javafxPlatform}"
+    compileOnly "org.openjfx:javafx-swing:11.0.2:${javafxPlatform}"
+    compileOnly "org.openjfx:javafx-base:11.0.2:${javafxPlatform}"
+}
