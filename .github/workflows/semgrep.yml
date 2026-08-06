@@ -1,10 +1,13 @@
-# Semgrep SAST scan for Webswing
+# Semgrep SAST scan for Suramadu
 # https://semgrep.dev/docs/semgrep-ci/sample-ci-configs
 #
-# Note: semgrep/semgrep-action is deprecated — use the semgrep Docker image directly.
+# Findings are reported to the GitHub Security tab rather than failing the
+# build: a SAST scan of a large codebase always surfaces something, and a
+# permanently red workflow gets ignored. Use branch protection or a required
+# code-scanning check if a hard gate is wanted.
 #
-# Badge (once this workflow exists):
-#   [![Semgrep](https://github.com/manticore-projects/webswing/actions/workflows/semgrep.yml/badge.svg)](https://github.com/manticore-projects/webswing/actions/workflows/semgrep.yml)
+# Badge:
+#   [![Semgrep](https://github.com/manticore-projects/suramadu/actions/workflows/semgrep.yml/badge.svg)](https://github.com/manticore-projects/suramadu/actions/workflows/semgrep.yml)
 
 name: Semgrep
 
@@ -21,20 +24,28 @@ on:
 
 permissions:
   contents: read
-  # Required for uploading SARIF to GitHub Security tab
+  # Required for uploading SARIF to the GitHub Security tab
   security-events: write
 
 jobs:
   semgrep:
     name: semgrep/scan
     runs-on: ubuntu-latest
-    container:
-      image: semgrep/semgrep
 
     if: github.actor != 'dependabot[bot]'
 
     steps:
       - uses: actions/checkout@v4
+
+      # Semgrep runs on the runner rather than in a container: JavaScript
+      # actions (checkout, upload-sarif, upload-artifact) need Node, which the
+      # semgrep/semgrep image does not provide.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install --disable-pip-version-check semgrep
 
       - name: Run Semgrep
         run: |
@@ -45,17 +56,16 @@ jobs:
             --config p/secrets \
             --sarif \
             --sarif-output semgrep-results.sarif \
-            --error \
-            --verbose
-        env:
-          # Uncomment and set in repo secrets if using Semgrep AppSec Platform:
-          # SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-          #
-          # Restrict memory for large repos (default is 0 = unlimited)
-          # SEMGREP_MAX_MEMORY: 4096
-          SEMGREP_SEND_METRICS: "off"
+            --metrics off \
+            --no-error \
+            --exclude 'build' \
+            --exclude 'node_modules' \
+            --exclude 'target' \
+            --exclude 'dist' \
+            --exclude '**/proto/**' \
+            --exclude '**/*.min.js'
 
-      - name: Upload SARIF to GitHub Security tab
+      - name: Upload SARIF to the GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep-results.sarif
