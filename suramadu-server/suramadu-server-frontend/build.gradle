@@ -1,6 +1,6 @@
 import com.github.gradle.node.npm.task.NpmTask
 
-apply plugin: 'webswing.node-conventions'
+apply plugin: 'suramadu.node-conventions'
 
 // Override npm install args for this module
 tasks.named('npmInstallTask') {

@@ -3,7 +3,7 @@
 // 'regenerateProto' task factory.
 //
 // Usage:
-//   apply plugin: 'webswing.protobuf-conventions'
+//   apply plugin: 'suramadu.protobuf-conventions'
 //   createRegenerateProtoTask('src/main/protobuf', 'src/main/java')
 //   // or with multiple outputs:
 //   createRegenerateProtoTask('src/main/protobuf', ['../sibling/src/main/java', 'src/main/java'])

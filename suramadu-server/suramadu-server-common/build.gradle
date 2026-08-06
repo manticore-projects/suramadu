@@ -1,4 +1,4 @@
-apply plugin: 'webswing.protobuf-conventions'
+apply plugin: 'suramadu.protobuf-conventions'
 
 dependencies {
     implementation "org.bitbucket.b_c:jose4j:${jose4jVersion}"

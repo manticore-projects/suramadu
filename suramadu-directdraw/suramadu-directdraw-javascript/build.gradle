@@ -1,4 +1,4 @@
-apply plugin: 'webswing.node-conventions'
+apply plugin: 'suramadu.node-conventions'
 
 dependencies {
     implementation project(':suramadu-directdraw:suramadu-directdraw-swing')

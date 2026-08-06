@@ -1,11 +1,11 @@
 /*!
-    Project: Webswing server webapp style.css (v 1.01)
+    Project: Suramadu server webapp style.css (v 1.01)
     Author: Stephen Niemans
 */
 
 // Description:
 // 1. Imports all SASS Partials
-// 2. Compiles into style.css stylesheet in Webswing's "webapp/javascript/templates" folder
+// 2. Compiles into style.css stylesheet in the "webapp/javascript/templates" folder
 
 @charset 'UTF-8';
 
@@ -18,27 +18,27 @@
 
 	@import '_utilities/_normalize';  // Normalize.css, makes default styles more predictable
 	@import '_utilities/_mixins';     // SASS mixins, mostly for convenience
-	@import '_utilities/_utility';    // Custom utility classes for Webswing
-	
+	@import '_utilities/_utility';    // Custom utility classes
+
 	// _base: Document-wide base styles
 	@import '_base/_base';   // Sets all HTML element styles after the reset
-	
+
 	// _components: Various components that make up the application
 	@import '_components/_basic';                   // Form fields etc
 	@import '_components/_forms';                   // Form fields etc
 	@import '_components/_modals/_login';           // Login modal
 	@import '_components/_toolbars/_touch';     	// Touch interface integration
-	
+
 	.suramadu-element-content {
 		@extend %ws-root-content;
-		
+
 		// _base: Document-wide base styles
 		@import '_base/_base';   // Sets all HTML element styles after the reset
-		
+
 		// _utilities: Mixins, variables, and third party code
 		@import '_utilities/_mixins';     // SASS mixins, mostly for convenience
-		@import '_utilities/_utility';    // Custom utility classes for Webswing
-		
+		@import '_utilities/_utility';    // Custom utility classes
+
 		@import '_components/_basic';                   // Form fields etc
 		@import '_components/_forms';                   // Form fields etc
 		@import '_components/_progress-bar';            // A progress bar for file import and export
@@ -46,7 +46,7 @@
 		@import '_components/_modals/_dialog';          // Common dialogs
 		@import '_components/_modals/_files';           // File up/download dialog
 		@import '_components/_modals/_paste';   		// Clipboard paste request dialog
-		@import '_components/_modals/_selector';   		// Webswing app selection
+		@import '_components/_modals/_selector';   		// App selection
 		@import '_components/_toolbars/_clipboard';     // Clipboard integration toolbar
 		@import '_components/_toolbars/_files';     	// File dialog integration toolbar
 		@import '_components/_toolbars/_playback';     	// Session recording playback toolbar
@@ -59,11 +59,11 @@
 		canvas {
 			z-index: 100;
 		}
-		
+
 		.suramadu-disabled {
 			pointer-events: none;
 		}
-		
+
 		.suramadu-html-canvas.modal-blocked {
 			pointer-events: none;
 		}
@@ -71,7 +71,7 @@
 		.suramadu-iframe-muted-while-dragging{
 			pointer-events: none;
 		}
-		
+
 		.close-prevented {
 			z-index: -1000 !important;
 			top: 0 !important;
@@ -80,21 +80,21 @@
 			width: 1px !important;
 			opacity: 0 !important;
 		}
-		
+
 		.internal-frames-wrapper {
 			position: absolute;
 			pointer-events: none;
 			overflow: hidden;
-			
+
 			canvas {
 				pointer-events: all;
 			}
-			
+
 			.suramadu-html-canvas {
 				pointer-events: all;
 			}
 		}
-		
+
 		.aria-element {
 			position: absolute;
 			z-index: 9999;
@@ -103,11 +103,11 @@
 			pointer-events: none;
 			overflow: hidden;
         }
-        
+
         #aria-describedby {
         	display: none;
         }
-        
+
         #aria-live-log {
         	position: absolute;
 			opacity: 0;
@@ -116,60 +116,60 @@
 			width: 0;
 			height: 0;
         }
-		
+
 	}
-	
+
 	&.touch {
 		display: flex;
 		flex-direction: column;
 		overflow: auto;
 		touch-action: manipulation;
-		
+
 		* {
 			touch-action: manipulation;
 		}
-		
+
 		.suramadu-element-content {
 			flex-grow: 1;
 			touch-action: manipulation;
-			-webkit-user-select: none; 
-			-khtml-user-select: none; 
-			-moz-user-select: none; 
-			-ms-user-select: none; 
-			-o-user-select: none; 
+			-webkit-user-select: none;
+			-khtml-user-select: none;
+			-moz-user-select: none;
+			-ms-user-select: none;
+			-o-user-select: none;
 			user-select: none;
 			-webkit-tap-highlight-color: rgba(0,0,0,0);
     		-webkit-touch-callout: none;
 			position: relative;
-			
+
 			canvas {
 				touch-action: manipulation;
-				-webkit-user-select: none; 
-				-khtml-user-select: none; 
-				-moz-user-select: none; 
-				-ms-user-select: none; 
-				-o-user-select: none; 
+				-webkit-user-select: none;
+				-khtml-user-select: none;
+				-moz-user-select: none;
+				-ms-user-select: none;
+				-o-user-select: none;
 				user-select: none;
 				-webkit-tap-highlight-color: rgba(0,0,0,0);
     			-webkit-touch-callout: none;
     			position: absolute;
     			top: 0;
     			left: 0;
-				
+
 				&:focus {
 					outline: none;
 				}
 			}
-			
+
 			.ws-input-hidden {
-				-webkit-user-select: text; 
-				-khtml-user-select: text; 
-				-moz-user-select: text; 
-				-ms-user-select: text; 
-				-o-user-select: text; 
+				-webkit-user-select: text;
+				-khtml-user-select: text;
+				-moz-user-select: text;
+				-ms-user-select: text;
+				-o-user-select: text;
 				user-select: text;
 			}
-			
+
 			.ws-clipboard, .ws-networkbar, .ws-commonbar {
 				position: fixed;
 				bottom: 65px;
@@ -216,4 +216,77 @@
 .modality-overlay .modality-button {
 	font-size: 1rem;
 	margin-top: 10px;
+}
+
+/* ── Source and licence notice ────────────────────────────────────────────
+   AGPL-3.0 section 13 requires the source offer to be presented to users
+   interacting with this server over a network.
+
+   The hosted application fills the viewport, so the notice is collapsed to a
+   small pill that expands on hover or keyboard focus. The collapsed state is
+   itself a link to the corresponding source, so the offer stands without any
+   interaction — which also covers touch devices, where hover does not exist.
+
+   Deliberately a top-level rule: the notice is a sibling of .suramadu-element,
+   not a child, so it must not be nested inside it.
+   ───────────────────────────────────────────────────────────────────────── */
+.source-notice {
+	position: fixed;
+	right: 4px;
+	bottom: 4px;
+	z-index: 2147483000;
+
+	display: inline-block;
+	max-width: 6.5rem;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: clip;
+
+	// Split rather than the `font` shorthand: Dart Sass reads the slash in
+	// `10px/1.5` as division and would emit a nonsense font size.
+	font-family: system-ui, -apple-system, 'Roboto', sans-serif;
+	font-size: 10px;
+	font-weight: 400;
+	line-height: 1.5;
+
+	color: #6e6e8a;
+	text-decoration: none;
+
+	background-color: rgba(255, 255, 255, 0.55);
+	border-radius: 3px;
+	padding: 1px 6px;
+
+	opacity: 0.65;
+	transition: max-width 0.18s ease, opacity 0.18s ease, background-color 0.18s ease;
+
+	.source-notice-full {
+		display: none;
+	}
+
+	u {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	&:hover,
+	&:focus,
+	&:focus-visible {
+		max-width: 32rem;
+		opacity: 1;
+		background-color: rgba(255, 255, 255, 0.95);
+		color: #1c1c2e;
+		outline: none;
+
+		.source-notice-short {
+			display: none;
+		}
+
+		.source-notice-full {
+			display: inline;
+		}
+
+		u {
+			color: #ff420e;
+		}
+	}
 }

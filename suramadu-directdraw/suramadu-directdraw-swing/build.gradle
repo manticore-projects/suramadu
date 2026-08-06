@@ -1,4 +1,4 @@
-apply plugin: 'webswing.protobuf-conventions'
+apply plugin: 'suramadu.protobuf-conventions'
 
 dependencies {
     implementation "com.google.protobuf:protobuf-java:${protobufVersion}"

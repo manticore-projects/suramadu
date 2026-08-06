@@ -2,7 +2,7 @@
 // Configures the node-gradle plugin and provides standard npm tasks.
 //
 // Usage:
-//   apply plugin: 'webswing.node-conventions'
+//   apply plugin: 'suramadu.node-conventions'
 //   // Then use npmInstallTask, npmBuild, etc.
 
 plugins {
