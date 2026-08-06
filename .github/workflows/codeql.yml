@@ -1,0 +1,118 @@
+# CodeQL analysis for Suramadu
+#
+# Java is analysed in 'manual' build mode: the project is compiled so that
+# CodeQL sees resolved types and can follow dataflow through the call graph.
+# JavaScript and TypeScript need no build and use 'none'.
+#
+# Four modules deliberately declare classes under fully-qualified names that
+# already exist elsewhere, and CodeQL scans only one of each clashing pair:
+#
+#   suramadu-app-toolkit-java11     JDK 11+ variants of WebToolkit,
+#   suramadu-app-toolkit-fx-java11  WebClipboardTransferable, WindowManager,
+#                                   Util and WebJSObject. Exactly one variant
+#                                   is placed on the classpath at runtime.
+#
+#   suramadu-modpatch/*             sun.awt.PlatformGraphicsInfo and
+#                                   netscape.javascript.JSObject, injected via
+#                                   --patch-module to replace their JDK
+#                                   counterparts. They shadow the JDK by design.
+#
+# Those are excluded below. The base implementations they mirror are scanned
+# in full.
+
+name: "CodeQL"
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+  schedule:
+    # Weekly, offset from the Semgrep scan so the two do not contend
+    - cron: "0 7 * * 6"
+  workflow_dispatch: {}
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    # The Java build pulls Node and the full dependency tree; an overrun should
+    # fail fast rather than idle against the default six-hour limit.
+    timeout-minutes: 60
+
+    permissions:
+      # Required to upload results to the Security tab
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: java-kotlin
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The Gradle toolchain resolves its own JDK for compilation; this provides
+      # the JVM that Gradle itself runs on.
+      - name: Set up JDK
+        if: matrix.build-mode == 'manual'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        if: matrix.build-mode == 'manual'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config: |
+            paths-ignore:
+              # JDK-version variants: same fully-qualified names as the base
+              # modules, only one of which is ever on the classpath.
+              - 'suramadu-app-toolkit-java11/**'
+              - 'suramadu-app-toolkit-fx-java11/**'
+
+              # Shims that deliberately shadow JDK classes via --patch-module.
+              - 'suramadu-modpatch/**'
+
+              # Generated and vendored code
+              - '**/proto/**'
+              - '**/*Proto.java'
+              - '**/*ProtoIn.java'
+              - '**/*ProtoOut.java'
+              - '**/node_modules/**'
+              - '**/*.min.js'
+
+              # Build output
+              - '**/build/**'
+              - '**/target/**'
+              - '**/dist/**'
+
+      # Compile only. Tests, formatting and the other quality gates run in their
+      # own workflows; repeating them here would slow the scan and make it fail
+      # for reasons unrelated to security analysis.
+      - name: Build
+        if: matrix.build-mode == 'manual'
+        run: |
+          ./gradlew classes \
+            --no-daemon \
+            --stacktrace \
+            -x check
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
