@@ -19,6 +19,12 @@ def isDev = project.hasProperty('dev')
 tasks.register('npmInstallTask', NpmTask) {
     args = ['install']
     enabled = !isDev
+
+    // Without these the install runs on every build. package-lock.json is intentionally NOT an
+    // input: npmAuditFix rewrites it, and treating it as an input would make this task perpetually
+    // out of date.
+    inputs.file('package.json').withPathSensitivity(PathSensitivity.RELATIVE)
+    outputs.dir('node_modules')
 }
 
 tasks.register('npmAuditFix', NpmTask) {

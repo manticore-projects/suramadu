@@ -8,40 +8,48 @@ plugins {
     id 'maven-publish'
 }
 
-// ─── JDK 21 toolchain ───────────────────────────────────────────────
+// ─── Toolchain ──────────────────────────────────────────────────────
+// Single source of truth for the Java version. This previously requested 21 here while the root
+// build requested 17 for every subproject; because the root block is applied afterwards, 17 won and
+// the 21 was dead code. The root block should now be removed so that only this one remains.
+//
+// 17 is deliberate: nothing in this repository references java.lang.foreign directly. The FFM work
+// lives inside zpng-java, which exposes a plain Java API, so the ZPNG dependency imposes no floor
+// here. Runtime is unaffected - the deployed servers and child JVMs run JDK 25 and load these
+// class files without issue.
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(17)
     }
 }
 
 // ─── Common --add-exports for compiler & test JVM ────────────────────
 // Shared as project extensions so other plugins/scripts can reference them.
 ext.jvmAddExports = [
-    '--add-exports=java.desktop/sun.awt=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.awt.dnd=ALL-UNNAMED',
-    '--add-exports=java.base/sun.nio.cs=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.java2d=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.java2d.pipe=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.java2d.loops=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.awt.datatransfer=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.awt.image=ALL-UNNAMED',
-    '--add-exports=java.desktop/java.awt.peer=ALL-UNNAMED',
-    '--add-exports=java.desktop/java.awt.dnd=ALL-UNNAMED',
-    '--add-exports=java.desktop/java.awt.dnd.peer=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.awt.im=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.font=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.print=ALL-UNNAMED',
-    '--add-exports=java.desktop/sun.awt.shell=ALL-UNNAMED',
-    '--add-exports=java.base/sun.security.util=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.awt=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.awt.dnd=ALL-UNNAMED',
+        '--add-exports=java.base/sun.nio.cs=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.java2d=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.java2d.pipe=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.java2d.loops=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.awt.datatransfer=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.awt.image=ALL-UNNAMED',
+        '--add-exports=java.desktop/java.awt.peer=ALL-UNNAMED',
+        '--add-exports=java.desktop/java.awt.dnd=ALL-UNNAMED',
+        '--add-exports=java.desktop/java.awt.dnd.peer=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.awt.im=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.font=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.print=ALL-UNNAMED',
+        '--add-exports=java.desktop/sun.awt.shell=ALL-UNNAMED',
+        '--add-exports=java.base/sun.security.util=ALL-UNNAMED',
 ]
 
 ext.jvmAddOpens = [
-    '--add-opens=java.desktop/sun.java2d=ALL-UNNAMED',
-    '--add-opens=java.desktop/sun.awt.image=ALL-UNNAMED',
-    '--add-opens=java.desktop/sun.font=ALL-UNNAMED',
-    '--add-opens=java.desktop/sun.awt=ALL-UNNAMED',
-    '--add-opens=java.base/sun.security.util=ALL-UNNAMED',
+        '--add-opens=java.desktop/sun.java2d=ALL-UNNAMED',
+        '--add-opens=java.desktop/sun.awt.image=ALL-UNNAMED',
+        '--add-opens=java.desktop/sun.font=ALL-UNNAMED',
+        '--add-opens=java.desktop/sun.awt=ALL-UNNAMED',
+        '--add-opens=java.base/sun.security.util=ALL-UNNAMED',
 ]
 
 ext.jvmAllModuleArgs = ext.jvmAddExports + ext.jvmAddOpens
@@ -50,6 +58,11 @@ ext.jvmAllModuleArgs = ext.jvmAddExports + ext.jvmAddOpens
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.deprecation = true
+    // NOTE: options.release must NOT be set here. javac rejects --release together with
+    // --add-exports ("exporting a package from system module java.desktop is not allowed with
+    // --release"), because --release compiles against a sealed snapshot of the historical API in
+    // which internal packages simply do not exist. This codebase depends on sun.awt, sun.java2d,
+    // sun.font and friends, so the toolchain's languageVersion is what pins the target instead.
     options.compilerArgs.addAll(project.ext.jvmAddExports)
 }
 

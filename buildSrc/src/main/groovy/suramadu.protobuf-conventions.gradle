@@ -8,6 +8,9 @@
 //   // or with multiple outputs:
 //   createRegenerateProtoTask('src/main/protobuf', ['../sibling/src/main/java', 'src/main/java'])
 
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
 def protocClassifier = {
     def os = System.getProperty('os.name').toLowerCase()
     def arch = System.getProperty('os.arch')
@@ -32,23 +35,59 @@ dependencies {
 //   protoDir:   path to .proto files (relative to project dir)
 //   outputDirs: single string or list of strings — output directories for generated Java
 ext.createRegenerateProtoTask = { String protoDir, outputDirs ->
-    def dirs = outputDirs instanceof List ? outputDirs : [outputDirs]
+    def dirs = (outputDirs instanceof List ? outputDirs : [outputDirs]).collect { project.file(it) }
     def protoDirFile = project.file(protoDir)
+    def protoFiles = project.fileTree(protoDirFile).matching { include '*.proto' }
+    def protocConfiguration = configurations.protoc
+
+    // Gradle 9 removed Project.exec(). ExecOperations is the supported replacement and, unlike
+    // project.exec, it does not capture the Project object — so this also keeps the task usable
+    // with the configuration cache.
+    def execOps = project.objects.newInstance(ProtocExecOpsHolder).execOperations
 
     tasks.register('regenerateProto') {
         description = 'Regenerate protobuf Java sources (manual, then commit results)'
         group = 'protobuf'
+
+        // Inputs only, deliberately no outputs: the generated sources land in src/main/java, which
+        // is an INPUT of compileJava. Declaring it as an output here would create an overlapping
+        // output between two tasks and make Gradle's up-to-date checks unreliable. This task is
+        // manual and cheap, so always running it is the right trade.
+        inputs.files(protoFiles).withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.files(protocConfiguration)
+
         doLast {
-            def protocFile = configurations.protoc.singleFile
+            def protocFile = protocConfiguration.singleFile
             protocFile.setExecutable(true)
+
+            def sources = protoFiles.files.collect { it.absolutePath }
+            if (sources.isEmpty()) {
+                throw new GradleException("No .proto files found in ${protoDirFile}")
+            }
+
             dirs.each { outDir ->
-                project.exec {
-                    executable protocFile.absolutePath
-                    args "--proto_path=${protoDirFile}"
-                    args "--java_out=${project.file(outDir)}"
-                    args project.fileTree(protoDirFile).matching { include '*.proto' }.files.collect { it.absolutePath }
+                // protoc will not create the output directory itself
+                outDir.mkdirs()
+
+                logger.lifecycle("Generating ${sources.size()} proto file(s) into ${outDir}")
+
+                // Explicit 'spec ->' parameter rather than a delegating closure: exec() takes an
+                // Action<ExecSpec>, and an undeclared parameter would resolve method calls against
+                // the enclosing script instead of the spec.
+                execOps.exec { spec ->
+                    spec.executable = protocFile.absolutePath
+                    spec.args("--proto_path=${protoDirFile}")
+                    spec.args("--java_out=${outDir}")
+                    spec.args(sources)
                 }
             }
         }
     }
+}
+
+// Holder for the injected ExecOperations service. Gradle instantiates this via
+// objects.newInstance() and satisfies the @Inject constructor parameter itself.
+interface ProtocExecOpsHolder {
+    @Inject
+    ExecOperations getExecOperations()
 }
