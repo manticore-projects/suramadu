@@ -4,7 +4,7 @@ plugins {
     id "com.diffplug.spotless" version "latest.release"
     id "org.sonarqube" version "latest.release"
     id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "latest.release"
-    id 'com.github.ben-manes.versions' version "latest.release"
+    id 'io.github.ben-manes.versions' version "latest.release"
 }
 
 apply plugin: 'com.github.node-gradle.node'
