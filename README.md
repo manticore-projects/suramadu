@@ -1,11 +1,11 @@
 <div align="center">
 
-# Suramadu 26.4.7
+# Suramadu 26.5.0
 
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
-[![Version](https://img.shields.io/badge/Version-26.4.7-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
+[![Version](https://img.shields.io/badge/Version-26.5.0-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
 [![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2026-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
@@ -114,15 +114,15 @@ The fork is hardened for the deployments it was built for.
 |-----------|---------|
 | JDK | 17 or later (21+ recommended; [Eclipse Temurin](https://adoptium.net/)). A **headless** JDK distribution is sufficient on Linux servers — see below. |
 
-**No X server, no Xvfb, no virtual framebuffer required.** Suramadu 26.4.7 runs truly headless on Linux via `--patch-module java.desktop` replacements for `GraphicsEnvironment`, `PlatformGraphicsInfo`, and `FontManagerFactory`. The standard `*-jre-headless` package from your distribution (or any JRE/JDK without the GUI dependencies) is enough. `DISPLAY` is explicitly unset by the startup script; nothing in the child Swing JVM ever calls into `libawt_xawt.so` or attempts a display connection.
+**No X server, no Xvfb, no virtual framebuffer required.** Suramadu 26.5.0 runs truly headless on Linux via `--patch-module java.desktop` replacements for `GraphicsEnvironment`, `PlatformGraphicsInfo`, and `FontManagerFactory`. The standard `*-jre-headless` package from your distribution (or any JRE/JDK without the GUI dependencies) is enough. `DISPLAY` is explicitly unset by the startup script; nothing in the child Swing JVM ever calls into `libawt_xawt.so` or attempts a display connection.
 
 ### Quick Start
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-26.4.7.zip
-unzip suramadu-26.4.7.zip
-cd suramadu-26.4.7
+curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-26.5.0.zip
+unzip suramadu-26.5.0.zip
+cd suramadu-26.5.0
 
 # Start the server
 ./run.sh start
@@ -173,7 +173,7 @@ cd suramadu
 
 ```bash
 # Extract to your deployment directory
-unzip build/dist/suramadu-26.4.7.zip -d /opt/suramadu
+unzip build/dist/suramadu-26.5.0.zip -d /opt/suramadu
 
 # Configure your Swing application
 vim /opt/suramadu/suramadu.config
