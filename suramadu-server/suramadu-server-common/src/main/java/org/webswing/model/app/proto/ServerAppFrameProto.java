@@ -7315,6 +7315,76 @@ public final class ServerAppFrameProto {
      * @return The waitForExit.
      */
     int getWaitForExit();
+
+    /**
+     * <pre>
+     * Why the application is exiting, as the name of a ShutdownReason constant
+     * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+     * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+     * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+     * </pre>
+     *
+     * <code>optional string reason = 2;</code>
+     * @return Whether the reason field is set.
+     */
+    boolean hasReason();
+    /**
+     * <pre>
+     * Why the application is exiting, as the name of a ShutdownReason constant
+     * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+     * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+     * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+     * </pre>
+     *
+     * <code>optional string reason = 2;</code>
+     * @return The reason.
+     */
+    java.lang.String getReason();
+    /**
+     * <pre>
+     * Why the application is exiting, as the name of a ShutdownReason constant
+     * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+     * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+     * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+     * </pre>
+     *
+     * <code>optional string reason = 2;</code>
+     * @return The bytes for reason.
+     */
+    com.google.protobuf.ByteString
+        getReasonBytes();
+
+    /**
+     * <pre>
+     * Free text detail from the application, e.g. "Exiting application due to session pool
+     * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+     * </pre>
+     *
+     * <code>optional string reasonDetail = 3;</code>
+     * @return Whether the reasonDetail field is set.
+     */
+    boolean hasReasonDetail();
+    /**
+     * <pre>
+     * Free text detail from the application, e.g. "Exiting application due to session pool
+     * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+     * </pre>
+     *
+     * <code>optional string reasonDetail = 3;</code>
+     * @return The reasonDetail.
+     */
+    java.lang.String getReasonDetail();
+    /**
+     * <pre>
+     * Free text detail from the application, e.g. "Exiting application due to session pool
+     * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+     * </pre>
+     *
+     * <code>optional string reasonDetail = 3;</code>
+     * @return The bytes for reasonDetail.
+     */
+    com.google.protobuf.ByteString
+        getReasonDetailBytes();
   }
   /**
    * Protobuf type {@code app.ExitMsgOutProto}
@@ -7329,6 +7399,8 @@ public final class ServerAppFrameProto {
       super(builder);
     }
     private ExitMsgOutProto() {
+      reason_ = "";
+      reasonDetail_ = "";
     }
 
     @java.lang.Override
@@ -7371,6 +7443,140 @@ public final class ServerAppFrameProto {
       return waitForExit_;
     }
 
+    public static final int REASON_FIELD_NUMBER = 2;
+    @SuppressWarnings("serial")
+    private volatile java.lang.Object reason_ = "";
+    /**
+     * <pre>
+     * Why the application is exiting, as the name of a ShutdownReason constant
+     * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+     * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+     * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+     * </pre>
+     *
+     * <code>optional string reason = 2;</code>
+     * @return Whether the reason field is set.
+     */
+    @java.lang.Override
+    public boolean hasReason() {
+      return ((bitField0_ & 0x00000002) != 0);
+    }
+    /**
+     * <pre>
+     * Why the application is exiting, as the name of a ShutdownReason constant
+     * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+     * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+     * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+     * </pre>
+     *
+     * <code>optional string reason = 2;</code>
+     * @return The reason.
+     */
+    @java.lang.Override
+    public java.lang.String getReason() {
+      java.lang.Object ref = reason_;
+      if (ref instanceof java.lang.String) {
+        return (java.lang.String) ref;
+      } else {
+        com.google.protobuf.ByteString bs = 
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        if (bs.isValidUtf8()) {
+          reason_ = s;
+        }
+        return s;
+      }
+    }
+    /**
+     * <pre>
+     * Why the application is exiting, as the name of a ShutdownReason constant
+     * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+     * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+     * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+     * </pre>
+     *
+     * <code>optional string reason = 2;</code>
+     * @return The bytes for reason.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getReasonBytes() {
+      java.lang.Object ref = reason_;
+      if (ref instanceof java.lang.String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        reason_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+
+    public static final int REASONDETAIL_FIELD_NUMBER = 3;
+    @SuppressWarnings("serial")
+    private volatile java.lang.Object reasonDetail_ = "";
+    /**
+     * <pre>
+     * Free text detail from the application, e.g. "Exiting application due to session pool
+     * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+     * </pre>
+     *
+     * <code>optional string reasonDetail = 3;</code>
+     * @return Whether the reasonDetail field is set.
+     */
+    @java.lang.Override
+    public boolean hasReasonDetail() {
+      return ((bitField0_ & 0x00000004) != 0);
+    }
+    /**
+     * <pre>
+     * Free text detail from the application, e.g. "Exiting application due to session pool
+     * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+     * </pre>
+     *
+     * <code>optional string reasonDetail = 3;</code>
+     * @return The reasonDetail.
+     */
+    @java.lang.Override
+    public java.lang.String getReasonDetail() {
+      java.lang.Object ref = reasonDetail_;
+      if (ref instanceof java.lang.String) {
+        return (java.lang.String) ref;
+      } else {
+        com.google.protobuf.ByteString bs = 
+            (com.google.protobuf.ByteString) ref;
+        java.lang.String s = bs.toStringUtf8();
+        if (bs.isValidUtf8()) {
+          reasonDetail_ = s;
+        }
+        return s;
+      }
+    }
+    /**
+     * <pre>
+     * Free text detail from the application, e.g. "Exiting application due to session pool
+     * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+     * </pre>
+     *
+     * <code>optional string reasonDetail = 3;</code>
+     * @return The bytes for reasonDetail.
+     */
+    @java.lang.Override
+    public com.google.protobuf.ByteString
+        getReasonDetailBytes() {
+      java.lang.Object ref = reasonDetail_;
+      if (ref instanceof java.lang.String) {
+        com.google.protobuf.ByteString b = 
+            com.google.protobuf.ByteString.copyFromUtf8(
+                (java.lang.String) ref);
+        reasonDetail_ = b;
+        return b;
+      } else {
+        return (com.google.protobuf.ByteString) ref;
+      }
+    }
+
     private byte memoizedIsInitialized = -1;
     @java.lang.Override
     public final boolean isInitialized() {
@@ -7388,6 +7594,12 @@ public final class ServerAppFrameProto {
       if (((bitField0_ & 0x00000001) != 0)) {
         output.writeSInt32(1, waitForExit_);
       }
+      if (((bitField0_ & 0x00000002) != 0)) {
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 2, reason_);
+      }
+      if (((bitField0_ & 0x00000004) != 0)) {
+        com.google.protobuf.GeneratedMessageV3.writeString(output, 3, reasonDetail_);
+      }
       getUnknownFields().writeTo(output);
     }
 
@@ -7400,6 +7612,12 @@ public final class ServerAppFrameProto {
       if (((bitField0_ & 0x00000001) != 0)) {
         size += com.google.protobuf.CodedOutputStream
           .computeSInt32Size(1, waitForExit_);
+      }
+      if (((bitField0_ & 0x00000002) != 0)) {
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(2, reason_);
+      }
+      if (((bitField0_ & 0x00000004) != 0)) {
+        size += com.google.protobuf.GeneratedMessageV3.computeStringSize(3, reasonDetail_);
       }
       size += getUnknownFields().getSerializedSize();
       memoizedSize = size;
@@ -7421,6 +7639,16 @@ public final class ServerAppFrameProto {
         if (getWaitForExit()
             != other.getWaitForExit()) return false;
       }
+      if (hasReason() != other.hasReason()) return false;
+      if (hasReason()) {
+        if (!getReason()
+            .equals(other.getReason())) return false;
+      }
+      if (hasReasonDetail() != other.hasReasonDetail()) return false;
+      if (hasReasonDetail()) {
+        if (!getReasonDetail()
+            .equals(other.getReasonDetail())) return false;
+      }
       if (!getUnknownFields().equals(other.getUnknownFields())) return false;
       return true;
     }
@@ -7435,6 +7663,14 @@ public final class ServerAppFrameProto {
       if (hasWaitForExit()) {
         hash = (37 * hash) + WAITFOREXIT_FIELD_NUMBER;
         hash = (53 * hash) + getWaitForExit();
+      }
+      if (hasReason()) {
+        hash = (37 * hash) + REASON_FIELD_NUMBER;
+        hash = (53 * hash) + getReason().hashCode();
+      }
+      if (hasReasonDetail()) {
+        hash = (37 * hash) + REASONDETAIL_FIELD_NUMBER;
+        hash = (53 * hash) + getReasonDetail().hashCode();
       }
       hash = (29 * hash) + getUnknownFields().hashCode();
       memoizedHashCode = hash;
@@ -7568,6 +7804,8 @@ public final class ServerAppFrameProto {
         super.clear();
         bitField0_ = 0;
         waitForExit_ = 0;
+        reason_ = "";
+        reasonDetail_ = "";
         return this;
       }
 
@@ -7605,6 +7843,14 @@ public final class ServerAppFrameProto {
         if (((from_bitField0_ & 0x00000001) != 0)) {
           result.waitForExit_ = waitForExit_;
           to_bitField0_ |= 0x00000001;
+        }
+        if (((from_bitField0_ & 0x00000002) != 0)) {
+          result.reason_ = reason_;
+          to_bitField0_ |= 0x00000002;
+        }
+        if (((from_bitField0_ & 0x00000004) != 0)) {
+          result.reasonDetail_ = reasonDetail_;
+          to_bitField0_ |= 0x00000004;
         }
         result.bitField0_ |= to_bitField0_;
       }
@@ -7656,6 +7902,16 @@ public final class ServerAppFrameProto {
         if (other.hasWaitForExit()) {
           setWaitForExit(other.getWaitForExit());
         }
+        if (other.hasReason()) {
+          reason_ = other.reason_;
+          bitField0_ |= 0x00000002;
+          onChanged();
+        }
+        if (other.hasReasonDetail()) {
+          reasonDetail_ = other.reasonDetail_;
+          bitField0_ |= 0x00000004;
+          onChanged();
+        }
         this.mergeUnknownFields(other.getUnknownFields());
         onChanged();
         return this;
@@ -7687,6 +7943,16 @@ public final class ServerAppFrameProto {
                 bitField0_ |= 0x00000001;
                 break;
               } // case 8
+              case 18: {
+                reason_ = input.readBytes();
+                bitField0_ |= 0x00000002;
+                break;
+              } // case 18
+              case 26: {
+                reasonDetail_ = input.readBytes();
+                bitField0_ |= 0x00000004;
+                break;
+              } // case 26
               default: {
                 if (!super.parseUnknownField(input, extensionRegistry, tag)) {
                   done = true; // was an endgroup tag
@@ -7740,6 +8006,238 @@ public final class ServerAppFrameProto {
       public Builder clearWaitForExit() {
         bitField0_ = (bitField0_ & ~0x00000001);
         waitForExit_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private java.lang.Object reason_ = "";
+      /**
+       * <pre>
+       * Why the application is exiting, as the name of a ShutdownReason constant
+       * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+       * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+       * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+       * </pre>
+       *
+       * <code>optional string reason = 2;</code>
+       * @return Whether the reason field is set.
+       */
+      public boolean hasReason() {
+        return ((bitField0_ & 0x00000002) != 0);
+      }
+      /**
+       * <pre>
+       * Why the application is exiting, as the name of a ShutdownReason constant
+       * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+       * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+       * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+       * </pre>
+       *
+       * <code>optional string reason = 2;</code>
+       * @return The reason.
+       */
+      public java.lang.String getReason() {
+        java.lang.Object ref = reason_;
+        if (!(ref instanceof java.lang.String)) {
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            reason_ = s;
+          }
+          return s;
+        } else {
+          return (java.lang.String) ref;
+        }
+      }
+      /**
+       * <pre>
+       * Why the application is exiting, as the name of a ShutdownReason constant
+       * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+       * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+       * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+       * </pre>
+       *
+       * <code>optional string reason = 2;</code>
+       * @return The bytes for reason.
+       */
+      public com.google.protobuf.ByteString
+          getReasonBytes() {
+        java.lang.Object ref = reason_;
+        if (ref instanceof String) {
+          com.google.protobuf.ByteString b = 
+              com.google.protobuf.ByteString.copyFromUtf8(
+                  (java.lang.String) ref);
+          reason_ = b;
+          return b;
+        } else {
+          return (com.google.protobuf.ByteString) ref;
+        }
+      }
+      /**
+       * <pre>
+       * Why the application is exiting, as the name of a ShutdownReason constant
+       * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+       * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+       * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+       * </pre>
+       *
+       * <code>optional string reason = 2;</code>
+       * @param value The reason to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReason(
+          java.lang.String value) {
+        if (value == null) { throw new NullPointerException(); }
+        reason_ = value;
+        bitField0_ |= 0x00000002;
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * Why the application is exiting, as the name of a ShutdownReason constant
+       * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+       * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+       * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+       * </pre>
+       *
+       * <code>optional string reason = 2;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearReason() {
+        reason_ = getDefaultInstance().getReason();
+        bitField0_ = (bitField0_ & ~0x00000002);
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * Why the application is exiting, as the name of a ShutdownReason constant
+       * (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+       * the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+       * which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+       * </pre>
+       *
+       * <code>optional string reason = 2;</code>
+       * @param value The bytes for reason to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReasonBytes(
+          com.google.protobuf.ByteString value) {
+        if (value == null) { throw new NullPointerException(); }
+        reason_ = value;
+        bitField0_ |= 0x00000002;
+        onChanged();
+        return this;
+      }
+
+      private java.lang.Object reasonDetail_ = "";
+      /**
+       * <pre>
+       * Free text detail from the application, e.g. "Exiting application due to session pool
+       * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+       * </pre>
+       *
+       * <code>optional string reasonDetail = 3;</code>
+       * @return Whether the reasonDetail field is set.
+       */
+      public boolean hasReasonDetail() {
+        return ((bitField0_ & 0x00000004) != 0);
+      }
+      /**
+       * <pre>
+       * Free text detail from the application, e.g. "Exiting application due to session pool
+       * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+       * </pre>
+       *
+       * <code>optional string reasonDetail = 3;</code>
+       * @return The reasonDetail.
+       */
+      public java.lang.String getReasonDetail() {
+        java.lang.Object ref = reasonDetail_;
+        if (!(ref instanceof java.lang.String)) {
+          com.google.protobuf.ByteString bs =
+              (com.google.protobuf.ByteString) ref;
+          java.lang.String s = bs.toStringUtf8();
+          if (bs.isValidUtf8()) {
+            reasonDetail_ = s;
+          }
+          return s;
+        } else {
+          return (java.lang.String) ref;
+        }
+      }
+      /**
+       * <pre>
+       * Free text detail from the application, e.g. "Exiting application due to session pool
+       * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+       * </pre>
+       *
+       * <code>optional string reasonDetail = 3;</code>
+       * @return The bytes for reasonDetail.
+       */
+      public com.google.protobuf.ByteString
+          getReasonDetailBytes() {
+        java.lang.Object ref = reasonDetail_;
+        if (ref instanceof String) {
+          com.google.protobuf.ByteString b = 
+              com.google.protobuf.ByteString.copyFromUtf8(
+                  (java.lang.String) ref);
+          reasonDetail_ = b;
+          return b;
+        } else {
+          return (com.google.protobuf.ByteString) ref;
+        }
+      }
+      /**
+       * <pre>
+       * Free text detail from the application, e.g. "Exiting application due to session pool
+       * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+       * </pre>
+       *
+       * <code>optional string reasonDetail = 3;</code>
+       * @param value The reasonDetail to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReasonDetail(
+          java.lang.String value) {
+        if (value == null) { throw new NullPointerException(); }
+        reasonDetail_ = value;
+        bitField0_ |= 0x00000004;
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * Free text detail from the application, e.g. "Exiting application due to session pool
+       * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+       * </pre>
+       *
+       * <code>optional string reasonDetail = 3;</code>
+       * @return This builder for chaining.
+       */
+      public Builder clearReasonDetail() {
+        reasonDetail_ = getDefaultInstance().getReasonDetail();
+        bitField0_ = (bitField0_ & ~0x00000004);
+        onChanged();
+        return this;
+      }
+      /**
+       * <pre>
+       * Free text detail from the application, e.g. "Exiting application due to session pool
+       * shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+       * </pre>
+       *
+       * <code>optional string reasonDetail = 3;</code>
+       * @param value The bytes for reasonDetail to set.
+       * @return This builder for chaining.
+       */
+      public Builder setReasonDetailBytes(
+          com.google.protobuf.ByteString value) {
+        if (value == null) { throw new NullPointerException(); }
+        reasonDetail_ = value;
+        bitField0_ |= 0x00000004;
         onChanged();
         return this;
       }
@@ -10808,22 +11306,23 @@ public final class ServerAppFrameProto {
       "\"0\n\027AppHandshakeMsgOutProto\022\025\n\rsecretMes" +
       "sage\030\001 \001(\t\"J\n\025ThreadDumpMsgOutProto\022\021\n\tt" +
       "imestamp\030\001 \001(\022\022\016\n\006dumpId\030\002 \001(\t\022\016\n\006reason" +
-      "\030\003 \001(\t\"&\n\017ExitMsgOutProto\022\023\n\013waitForExit" +
-      "\030\001 \001(\021\"\241\001\n\022ApiCallMsgOutProto\022\025\n\rcorrela" +
-      "tionId\030\001 \001(\t\0226\n\006method\030\002 \001(\0162&.app.ApiCa" +
-      "llMsgOutProto.ApiMethodProto\022\014\n\004args\030\003 \003" +
-      "(\t\".\n\016ApiMethodProto\022\013\n\007HasRole\020\000\022\017\n\013IsP" +
-      "ermitted\020\001\"g\n\023JvmStatsMsgOutProto\022\020\n\010hea" +
-      "pSize\030\001 \001(\001\022\024\n\014heapSizeUsed\030\002 \001(\001\022\020\n\010cpu" +
-      "Usage\030\003 \001(\001\022\026\n\016edtPingSeconds\030\004 \001(\021\"\200\002\n\026" +
-      "SessionDataMsgOutProto\022\016\n\006applet\030\001 \001(\010\022\035" +
-      "\n\025sessionLoggingEnabled\030\002 \001(\010\022>\n\017recordi" +
-      "ngStatus\030\003 \001(\0162%.commonProto.RecordingSt" +
-      "atusEnumProto\022>\n\017mirroringStatus\030\004 \001(\0162%" +
-      ".commonProto.MirroringStatusEnumProto\022\025\n" +
-      "\rrecordingFile\030\005 \001(\t\022 \n\030statisticsLoggin" +
-      "gEnabled\030\006 \001(\010B\036\n\034org.webswing.model.app" +
-      ".proto"
+      "\030\003 \001(\t\"L\n\017ExitMsgOutProto\022\023\n\013waitForExit" +
+      "\030\001 \001(\021\022\016\n\006reason\030\002 \001(\t\022\024\n\014reasonDetail\030\003" +
+      " \001(\t\"\241\001\n\022ApiCallMsgOutProto\022\025\n\rcorrelati" +
+      "onId\030\001 \001(\t\0226\n\006method\030\002 \001(\0162&.app.ApiCall" +
+      "MsgOutProto.ApiMethodProto\022\014\n\004args\030\003 \003(\t" +
+      "\".\n\016ApiMethodProto\022\013\n\007HasRole\020\000\022\017\n\013IsPer" +
+      "mitted\020\001\"g\n\023JvmStatsMsgOutProto\022\020\n\010heapS" +
+      "ize\030\001 \001(\001\022\024\n\014heapSizeUsed\030\002 \001(\001\022\020\n\010cpuUs" +
+      "age\030\003 \001(\001\022\026\n\016edtPingSeconds\030\004 \001(\021\"\200\002\n\026Se" +
+      "ssionDataMsgOutProto\022\016\n\006applet\030\001 \001(\010\022\035\n\025" +
+      "sessionLoggingEnabled\030\002 \001(\010\022>\n\017recording" +
+      "Status\030\003 \001(\0162%.commonProto.RecordingStat" +
+      "usEnumProto\022>\n\017mirroringStatus\030\004 \001(\0162%.c" +
+      "ommonProto.MirroringStatusEnumProto\022\025\n\rr" +
+      "ecordingFile\030\005 \001(\t\022 \n\030statisticsLoggingE" +
+      "nabled\030\006 \001(\010B\036\n\034org.webswing.model.app.p" +
+      "roto"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
@@ -10877,7 +11376,7 @@ public final class ServerAppFrameProto {
     internal_static_app_ExitMsgOutProto_fieldAccessorTable = new
       com.google.protobuf.GeneratedMessageV3.FieldAccessorTable(
         internal_static_app_ExitMsgOutProto_descriptor,
-        new java.lang.String[] { "WaitForExit", });
+        new java.lang.String[] { "WaitForExit", "Reason", "ReasonDetail", });
     internal_static_app_ApiCallMsgOutProto_descriptor =
       getDescriptor().getMessageTypes().get(8);
     internal_static_app_ApiCallMsgOutProto_fieldAccessorTable = new
