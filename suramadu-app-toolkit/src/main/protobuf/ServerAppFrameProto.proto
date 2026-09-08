@@ -61,6 +61,14 @@ message ThreadDumpMsgOutProto {
 
 message ExitMsgOutProto {
 	optional sint32 waitForExit = 1;
+	// Why the application is exiting, as the name of a ShutdownReason constant
+	// (BrowserKill, Admin, Inactivity, ProcessKilled). Deliberately a string rather than an enum:
+	// the value is diagnostic only, and proto2 silently drops enum values a peer does not know,
+	// which is exactly the wrong behaviour for a field whose only job is to explain an outage.
+	optional string reason = 2;
+	// Free text detail from the application, e.g. "Exiting application due to session pool
+	// shutdown." Without this, "ProcessKilled" alone does not say WHY the heartbeat stopped.
+	optional string reasonDetail = 3;
 }
 
 message ApiCallMsgOutProto {

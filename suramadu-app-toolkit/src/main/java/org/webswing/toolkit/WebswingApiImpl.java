@@ -124,7 +124,8 @@ public class WebswingApiImpl implements WebswingApi {
 
   @Override
   public void notifyShutdown(int forceKillTimeout) {
-    Util.getWebToolkit().getPaintDispatcher().notifyApplicationExiting(forceKillTimeout);
+    Util.getWebToolkit().getPaintDispatcher().notifyApplicationExiting(forceKillTimeout, null,
+        "Shutdown requested by the application through the Webswing API.");
   }
 
   @Override

@@ -1031,6 +1031,16 @@ public abstract class WebToolkit extends SunToolkit implements WebswingApiProvid
   }
 
   public synchronized void exitSwing(final int i) {
+    exitSwing(i, null, null);
+  }
+
+  /**
+   * @param reason why the application is shutting down, forwarded to the server so the reason
+   *        appears in the server log; may be null when not known
+   * @param reasonDetail free text detail for the same purpose; may be null
+   */
+  public synchronized void exitSwing(final int i, final ShutdownReason reason,
+      final String reasonDetail) {
     if (!exiting) {
       exiting = true;
       Thread shutdownThread = new Thread(() -> {
@@ -1038,7 +1048,7 @@ public abstract class WebToolkit extends SunToolkit implements WebswingApiProvid
         try {
           stopRecording();
           getSessionWatchdog().notifyExit();
-          getPaintDispatcher().notifyApplicationExiting();
+          getPaintDispatcher().notifyApplicationExiting(reason, reasonDetail);
           api.fireShutdownListeners();
         } catch (Exception e) {
           AppLogger.error("Error during shutdown sequence", e);

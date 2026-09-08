@@ -129,12 +129,15 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
     appConnection.instanceConnected(this);
     sendConnectionInfo();
 
-    if (reconnect && webConnection != null) {
+    if (reconnect) {
+      PrimaryWebSocketConnection wc;
       synchronized (webConnectionLock) {
+        wc = this.webConnection;
+      }
+      if (wc != null) {
         // FIXME is this ok ?
         // send continue old session, because this is sent if we hit the same server on refresh
-        sendDirectMessageToBrowser(webConnection,
-            SimpleEventMsgOut.continueOldSession.buildMsgOut());
+        sendDirectMessageToBrowser(wc, SimpleEventMsgOut.continueOldSession.buildMsgOut());
       }
     }
 
@@ -183,12 +186,13 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
       disconnectPrimaryWebSession("Application disconnected from Server.");
       disconnectMirroredWebSession(true);
     } else if (Constants.APP_WEBSOCKET_CLOSE_REASON_RECONNECT.equals(reason)) {
-      if (this.webConnection != null) {
-        synchronized (webConnectionLock) {
-          // session stolen
-          sendDirectMessageToBrowser(this.webConnection,
-              SimpleEventMsgOut.sessionStolenNotification.buildMsgOut());
-        }
+      PrimaryWebSocketConnection wc;
+      synchronized (webConnectionLock) {
+        wc = this.webConnection;
+      }
+      if (wc != null) {
+        // session stolen
+        sendDirectMessageToBrowser(wc, SimpleEventMsgOut.sessionStolenNotification.buildMsgOut());
       }
       disconnectPrimaryWebSession("Session stolen, reconnect.");
       disconnectMirroredWebSession(true);
@@ -203,16 +207,28 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
 
     if (this.webConnection != null && config.isAllowStealSession()) {
       // steal session
+      PrimaryWebSocketConnection stolen;
       synchronized (webConnectionLock) {
-        sendDirectMessageToBrowser(this.webConnection,
+        stolen = this.webConnection;
+      }
+      if (stolen != null) {
+        sendDirectMessageToBrowser(stolen,
             SimpleEventMsgOut.sessionStolenNotification.buildMsgOut());
-        disconnectPrimaryWebSession("Session stolen.");
-        poolConnector.notifyUserDisconnected(this); // call this once webConnection is already null
+      }
+      disconnectPrimaryWebSession("Session stolen.");
+      poolConnector.notifyUserDisconnected(this); // call this once webConnection is already null
+    }
+
+    boolean connected;
+    synchronized (webConnectionLock) {
+      // check-and-set under the monitor so two browsers cannot both claim this instance
+      connected = this.webConnection == null;
+      if (connected) {
+        this.webConnection = resource;
       }
     }
 
-    if (this.webConnection == null) {
-      this.webConnection = resource;
+    if (connected) {
       logStatValue(StatisticsLogger.WEBSOCKET_CONNECTED, 1);
       notifyUserConnected();
       return true;
@@ -222,17 +238,27 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
   }
 
   private void disconnectPrimaryWebSession(String reason) {
-    if (this.webConnection != null) {
-      synchronized (webConnectionLock) {
-        notifyUserDisconnected(); // this uses webConnection
-        this.lastConnection = this.webConnection.getUserInfo();
-        this.lastConnection.setDisconnected();
-        this.webConnection.disconnect(reason);
+    PrimaryWebSocketConnection wc;
+
+    synchronized (webConnectionLock) {
+      wc = this.webConnection;
+      if (wc == null) {
+        return;
       }
+      this.lastConnection = wc.getUserInfo();
+      this.lastConnection.setDisconnected();
+      // clear the field before any I/O, so nothing else can pick up a connection we are closing
       this.webConnection = null;
-      poolConnector.notifyUserDisconnected(this); // call this once webConnection is already null
-      logStatValue(StatisticsLogger.WEBSOCKET_CONNECTED, 0);
     }
+
+    // Both calls below reach the network and must not run while holding webConnectionLock.
+    // sendUserApiEventMsg() in particular writes to the APPLICATION websocket, so holding the
+    // browser connection monitor across it coupled two unrelated connections together.
+    notifyUserDisconnected(wc);
+    wc.disconnect(reason);
+
+    poolConnector.notifyUserDisconnected(this); // call this once webConnection is already null
+    logStatValue(StatisticsLogger.WEBSOCKET_CONNECTED, 0);
   }
 
   @Override
@@ -241,12 +267,15 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
       return;
     }
 
-    if (this.mirroredWebConnection != null) {
-      synchronized (mirroredWebConnectionLock) {
-        sendDirectMessageToBrowser(this.mirroredWebConnection,
-            SimpleEventMsgOut.sessionStolenNotification.buildMsgOut());
-      }
-      this.mirroredWebConnection.disconnect("Mirror session stolen.");
+    MirrorWebSocketConnection previous;
+    synchronized (mirroredWebConnectionLock) {
+      previous = this.mirroredWebConnection;
+    }
+
+    if (previous != null) {
+      sendDirectMessageToBrowser(previous,
+          SimpleEventMsgOut.sessionStolenNotification.buildMsgOut());
+      previous.disconnect("Mirror session stolen.");
       disconnectMirroredWebSession(false);
     }
     this.mirroredWebConnection = mirror;
@@ -349,8 +378,14 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
     }
 
     if (msgOut.getExit() != null) {
-      close();
       ExitMsgOut e = msgOut.getExit();
+      // The application now tells us WHY it is exiting. Applications built against an older
+      // toolkit leave these unset, hence the defaults.
+      String exitReason = StringUtils.defaultIfBlank(e.getReason(), "unknown");
+      String exitDetail = StringUtils.defaultIfBlank(e.getReasonDetail(), "no detail reported");
+      log.info("Instance [{}] is exiting on its own request: ({}) {} Process will be killed in {}ms.",
+          getInstanceId(), exitReason, exitDetail, e.getWaitForExit());
+      close("Closing instance: application requested shutdown (" + exitReason + ").");
       poolConnector.kill(getInstanceId(), e.getWaitForExit());
     }
 
@@ -399,11 +434,16 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
 
   @Override
   public void handleBrowserMirrorMessage(byte[] frame) {
-    if (mirroredWebConnection != null) {
-      synchronized (mirroredWebConnectionLock) {
-        if (mirroringStatus == MirroringStatusEnum.MIRRORING) {
-          mirroredWebConnection.handleBrowserMirrorMessage(frame);
-        }
+    MirrorWebSocketConnection mwc;
+    boolean mirroring;
+    synchronized (mirroredWebConnectionLock) {
+      mwc = this.mirroredWebConnection;
+      mirroring = mirroringStatus == MirroringStatusEnum.MIRRORING;
+    }
+
+    if (mwc != null) {
+      if (mirroring) {
+        mwc.handleBrowserMirrorMessage(frame);
       }
     } else {
       log.warn("Mirror not connected [{}]!", getInstanceId());
@@ -411,15 +451,20 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
   }
 
   private void closeBrowserConnections() {
-    if (webConnection != null) {
-      synchronized (webConnectionLock) {
-        webConnection.disconnect("Application disconnected!");
-      }
+    PrimaryWebSocketConnection wc;
+    synchronized (webConnectionLock) {
+      wc = this.webConnection;
     }
-    if (mirroredWebConnection != null) {
-      synchronized (mirroredWebConnectionLock) {
-        mirroredWebConnection.disconnect("Application disconnected!");
-      }
+    if (wc != null) {
+      wc.disconnect("Application disconnected!");
+    }
+
+    MirrorWebSocketConnection mwc;
+    synchronized (mirroredWebConnectionLock) {
+      mwc = this.mirroredWebConnection;
+    }
+    if (mwc != null) {
+      mwc.disconnect("Application disconnected!");
     }
 
     disconnectPrimaryWebSession("Application closed.");
@@ -651,6 +696,14 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
 
   @Override
   public void close() {
+    close("Closing instance: application process ended.");
+  }
+
+  /**
+   * @param reason carried into the application websocket close frame, so the server log names why
+   *        the instance ended instead of always reporting the same opaque "Closing instance."
+   */
+  private void close(String reason) {
     notifyExiting();
 
     if (config.isAutoLogout()) {
@@ -670,7 +723,7 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
     }
 
     if (appConnection != null) {
-      appConnection.disconnect("Closing instance.");
+      appConnection.disconnect(reason);
     }
   }
 
@@ -705,15 +758,17 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
         new ConnectionInfoMsgOut(System.getProperty(Constants.WEBSWING_SERVER_ID),
             appConnection.getSessionPoolId(), config.isAutoLogout()));
 
+    PrimaryWebSocketConnection wc;
     synchronized (webConnectionLock) {
-      if (webConnection.isConnected()) {
-        webConnection.sendMessage(msgOut);
-      }
+      wc = this.webConnection;
+    }
+    if (wc != null && wc.isConnected()) {
+      wc.sendMessage(msgOut);
     }
   }
 
-  private void notifyUserDisconnected() {
-    sendUserApiEventMsg(ApiEventType.UserDisconnected, webConnection);
+  private void notifyUserDisconnected(PrimaryWebSocketConnection r) {
+    sendUserApiEventMsg(ApiEventType.UserDisconnected, r);
   }
 
   private void notifyMirrorViewConnected() {

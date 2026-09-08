@@ -71,9 +71,11 @@ public class WebSessionWatchdog implements SessionWatchdog {
           if (watchHeartbeat.get()) {
             if (System.currentTimeMillis() - lastHeartbeat.get() > LAST_HEARTBEAT_BEFORE_SHUTDOWN) {
               watchHeartbeat.set(false);
-              scheduleShutdown(ShutdownReason.ProcessKilled, () -> {
-                AppLogger.warn("Exiting application due to session pool shutdown.");
-              });
+              scheduleShutdown(ShutdownReason.ProcessKilled,
+                  "No heartbeat received from the session pool for "
+                      + LAST_HEARTBEAT_BEFORE_SHUTDOWN / 1000
+                      + " seconds. Exiting application due to session pool shutdown.",
+                  null);
             }
           } else {
             if (terminated.get()) {
@@ -134,11 +136,9 @@ public class WebSessionWatchdog implements SessionWatchdog {
 
             if (diff > timeoutMs) {
               if (!terminated.get()) {// only call once
-                scheduleShutdown(ShutdownReason.Inactivity, () -> {
-                  AppLogger.warn(
-                      "Exiting application due to inactivity for " + diff / 1000 + " seconds.");
-                  Util.getWebToolkit().getPaintDispatcher().notifySessionTimedOut();
-                });
+                scheduleShutdown(ShutdownReason.Inactivity,
+                    "Exiting application due to inactivity for " + diff / 1000 + " seconds.",
+                    () -> Util.getWebToolkit().getPaintDispatcher().notifySessionTimedOut());
               }
             }
           }
@@ -212,8 +212,7 @@ public class WebSessionWatchdog implements SessionWatchdog {
 
   @Override
   public void scheduleShutdown(ShutdownReason reason) {
-    scheduleShutdown(reason, () -> {
-    });
+    scheduleShutdown(reason, null, null);
   }
 
   @Override
@@ -227,16 +226,27 @@ public class WebSessionWatchdog implements SessionWatchdog {
     return terminated.get();
   }
 
-  private void scheduleShutdown(ShutdownReason reason, Runnable shutdownlogic) {
+  /**
+   * @param reasonDetail human readable explanation of the shutdown. It is logged when the shutdown
+   *        actually runs AND forwarded to the server inside ExitMsgOut, so both sides of the
+   *        connection record the same explanation. May be null.
+   */
+  private void scheduleShutdown(ShutdownReason reason, String reasonDetail,
+      Runnable shutdownlogic) {
     synchronized (delayedShutdownScheduleLock) {
       try {
         schedulingShutdown = true;
         if (delayedShutdownFuture == null || delayedShutdownFuture.isDone()) {
           int delaySeconds = Util.getWebToolkit().executeOnBeforeShutdownListeners(reason);
           delayedShutdownFuture = exitScheduler.schedule(() -> {
-            shutdownlogic.run();
+            if (reasonDetail != null) {
+              AppLogger.warn(reasonDetail);
+            }
+            if (shutdownlogic != null) {
+              shutdownlogic.run();
+            }
             terminated.set(true);
-            Util.getWebToolkit().exitSwing(0);
+            Util.getWebToolkit().exitSwing(0, reason, reasonDetail);
           }, delaySeconds, TimeUnit.SECONDS);
           AppLogger.info("(" + reason + ") Application Shutdown scheduled. (delayed by "
               + delayedShutdownFuture.getDelay(TimeUnit.SECONDS) + " seconds).");

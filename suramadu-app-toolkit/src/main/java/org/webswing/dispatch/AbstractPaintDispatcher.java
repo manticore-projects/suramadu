@@ -11,6 +11,7 @@ import org.webswing.toolkit.WebWindowPeer;
 import org.webswing.toolkit.api.clipboard.PasteRequestContext;
 import org.webswing.toolkit.api.clipboard.WebswingClipboardData;
 import org.webswing.toolkit.api.file.WebswingFileChooserUtil;
+import org.webswing.toolkit.api.lifecycle.ShutdownReason;
 import org.webswing.toolkit.extra.IsolatedFsShellFolderManager;
 import org.webswing.toolkit.util.Services;
 import org.webswing.toolkit.util.ToolkitUtil;
@@ -454,15 +455,34 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
   }
 
   public void notifyApplicationExiting() {
+    notifyApplicationExiting(null, null);
+  }
+
+  public void notifyApplicationExiting(ShutdownReason reason, String reasonDetail) {
     notifyApplicationExiting(
-        Integer.getInteger(Constants.SWING_START_SYS_PROP_WAIT_FOR_EXIT, 30000));
+        Integer.getInteger(Constants.SWING_START_SYS_PROP_WAIT_FOR_EXIT, 30000), reason,
+        reasonDetail);
   }
 
   public void notifyApplicationExiting(int waitBeforeKill) {
+    notifyApplicationExiting(waitBeforeKill, null, null);
+  }
+
+  public void notifyApplicationExiting(int waitBeforeKill, ShutdownReason reason,
+      String reasonDetail) {
     AppToServerFrameMsgOut msgOut = new AppToServerFrameMsgOut();
 
     ExitMsgOut f = new ExitMsgOut();
     f.setWaitForExit(waitBeforeKill);
+    // Carry the reason to the server, so the server log says WHY an instance ended instead of
+    // reporting the same opaque "Closing instance." for every cause. Both fields are optional on
+    // the wire: an application built against an older toolkit simply leaves them unset.
+    if (reason != null) {
+      f.setReason(reason.name());
+    }
+    if (reasonDetail != null) {
+      f.setReasonDetail(reasonDetail);
+    }
 
     msgOut.setExit(f);
 

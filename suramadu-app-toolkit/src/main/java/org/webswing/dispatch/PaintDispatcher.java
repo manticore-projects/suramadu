@@ -6,6 +6,7 @@ import org.webswing.model.appframe.out.FocusEventMsgOut;
 import org.webswing.toolkit.api.clipboard.PasteRequestContext;
 import org.webswing.toolkit.api.clipboard.WebswingClipboardData;
 import org.webswing.toolkit.api.component.HtmlPanel;
+import org.webswing.toolkit.api.lifecycle.ShutdownReason;
 
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -97,6 +98,14 @@ public interface PaintDispatcher {
   void notifyApplicationExiting();
 
   void notifyApplicationExiting(int waitBeforeKill);
+
+  /**
+   * @param reason why the application is exiting; may be null when not known
+   * @param reasonDetail free text explaining the reason; may be null
+   */
+  void notifyApplicationExiting(ShutdownReason reason, String reasonDetail);
+
+  void notifyApplicationExiting(int waitBeforeKill, ShutdownReason reason, String reasonDetail);
 
   void notifyComponentTreeRequested(); // test tool
 
