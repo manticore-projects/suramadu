@@ -454,22 +454,36 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
     return msgOut;
   }
 
+  /**
+   * Sends a frame to the browser (and to the mirroring admin session, if active).
+   * <p>
+   * The websocket write is deliberately performed OUTSIDE {@code webConnectionLock}. A write to a
+   * half-open browser connection can block indefinitely, and holding the monitor across it blocked
+   * every other thread needing this instance — including the shared process handler pool, which
+   * then stopped delivering stdin heartbeats to all child JVMs. Those children then shut themselves
+   * down with {@code ShutdownReason.ProcessKilled}, which presented as "every app dies ~5s after
+   * the UI appears, only a server restart helps".
+   * <p>
+   * The lock is still used to read the mutable connection references consistently; the connections
+   * themselves are responsible for their own send-side thread safety.
+   */
   public boolean sendMessageToBrowser(ServerToBrowserFrameMsgOut msgOut) {
-    if (webConnection != null) {
-      synchronized (webConnectionLock) {
-        if (webConnection.isConnected()) {
-          webConnection.sendMessage(msgOut);
-        }
-      }
+    PrimaryWebSocketConnection wc;
+    synchronized (webConnectionLock) {
+      wc = webConnection;
     }
-    if (mirroredWebConnection != null) {
-      synchronized (mirroredWebConnectionLock) {
-        if (mirroredWebConnection.isConnected()) {
-          if (mirroringStatus == MirroringStatusEnum.MIRRORING) {
-            mirroredWebConnection.sendMessage(msgOut);
-          }
-        }
-      }
+    if (wc != null && wc.isConnected()) {
+      wc.sendMessage(msgOut);
+    }
+
+    MirrorWebSocketConnection mwc;
+    boolean mirroring;
+    synchronized (mirroredWebConnectionLock) {
+      mwc = mirroredWebConnection;
+      mirroring = mirroringStatus == MirroringStatusEnum.MIRRORING;
+    }
+    if (mwc != null && mirroring && mwc.isConnected()) {
+      mwc.sendMessage(msgOut);
     }
 
     return true;

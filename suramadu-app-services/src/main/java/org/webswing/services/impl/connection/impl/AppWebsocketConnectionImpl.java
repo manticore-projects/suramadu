@@ -25,6 +25,8 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -38,6 +40,19 @@ public class AppWebsocketConnectionImpl implements ServerConnection {
       Constants.WEBSOCKET_MESSAGE_TIMEOUT_DEFAULT);
   private static long syncTimeout = Long.getLong(Constants.SWING_START_SYS_PROP_SYNC_TIMEOUT,
       Constants.SWING_START_SYS_PROP_SYNC_TIMEOUT_DEFAULT_VALUE);
+
+  /**
+   * Hard upper bound on how long a single outbound frame may block the calling thread.
+   * <p>
+   * Session.getAsyncRemote().setSendTimeout() is NOT sufficient: Jetty completes the returned
+   * Future through a plain CountDownLatch callback, and if that callback is never invoked (the
+   * server side went away without closing the TCP connection) the untimed get() parks forever.
+   * Because this send is called from the EDT and from the paint dispatcher while holding
+   * {@code sendLock}, an unbounded wait freezes the whole application — the process then survives
+   * as an orphan that the server can never reap.
+   */
+  private static final long SEND_TIMEOUT_MS = Long.getLong("webswing.websocket.sendTimeoutMs",
+      messageTimeout > 0 ? messageTimeout : 30000L);
 
   private ProtoMapper protoMapper = new ProtoMapper(ProtoMapper.PROTO_PACKAGE_SERVER_APP_FRAME,
       ProtoMapper.PROTO_PACKAGE_SERVER_APP_FRAME, ClassLoaderUtil.getServiceClassLoader());
@@ -228,16 +243,37 @@ public class AppWebsocketConnectionImpl implements ServerConnection {
       Util.getWebToolkit().recordFrame(msgOut.getAppFrameMsgOut());
     }
 
+    boolean timedOut = false;
+
     try {
       byte[] encoded = protoMapper.encodeProto(msgOut);
       synchronized (sendLock) {
-        session.getAsyncRemote().sendBinary(ByteBuffer.wrap(encoded)).get();
+        Future<Void> pending = session.getAsyncRemote().sendBinary(ByteBuffer.wrap(encoded));
+        try {
+          pending.get(SEND_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+          pending.cancel(true);
+          timedOut = true;
+        }
       }
-    } catch (IOException | InterruptedException | ExecutionException e) {
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      AppLogger.error("Interrupted sending msg to server [" + serverUrl + "] , session ["
+          + session.getId() + "]", e.getMessage());
+      AppLogger.debug(e.getMessage(), e);
+    } catch (IOException | ExecutionException e) {
       AppLogger.error(
           "Error sending msg to server [" + serverUrl + "] , session [" + session.getId() + "]",
           e.getMessage());
       AppLogger.debug(e.getMessage(), e);
+    }
+
+    if (timedOut) {
+      // Deliberately outside sendLock. Closing the session makes onClose() fire, which schedules a
+      // reconnect via the existing retry machinery — the right recovery for a link that stalled.
+      AppLogger.error("Websocket send to server [" + serverUrl + "] timed out after "
+          + SEND_TIMEOUT_MS + "ms, dropping the connection to force a reconnect.");
+      disconnect(CloseReason.CloseCodes.GOING_AWAY, "Send timeout");
     }
   }
 

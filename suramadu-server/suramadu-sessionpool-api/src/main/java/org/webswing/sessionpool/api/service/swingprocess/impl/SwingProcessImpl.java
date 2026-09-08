@@ -38,12 +38,27 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.StringTokenizer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
+import org.webswing.util.NamedThreadFactory;
 
 public class SwingProcessImpl implements SwingProcess {
+
+  /**
+   * Teardown of a process runs the full server-side close sequence (ProcessExitListener →
+   * instanceClosed → SwingInstance.close → browser websocket send). That chain can block on a
+   * half-open browser socket. It must therefore NEVER run on {@link #processHandlerThread}, which
+   * carries the log pollers and stdin heartbeats of every other instance.
+   */
+  private static final ExecutorService TERMINATION_EXECUTOR =
+      Executors.newCachedThreadPool(NamedThreadFactory.getInstance("Webswing Process Terminator"));
+
   private final ScheduledExecutorService processHandlerThread;
   private static final long LOG_POLLING_PERIOD = 100L;
   private static final long HEARTBEAT_PERIOD = 1000L;
@@ -75,7 +90,8 @@ public class SwingProcessImpl implements SwingProcess {
   private boolean hasSessionLog;
   private String sessionLogDestination;
 
-  private boolean destroying;
+  /** One-shot latch: set when teardown starts and never cleared. */
+  private final AtomicBoolean destroying = new AtomicBoolean(false);
   private ScheduledFuture<?> delayedTermination;
   private boolean forceKilled;
   private ProcessExitListener closeListener;
@@ -137,6 +153,11 @@ public class SwingProcessImpl implements SwingProcess {
         return; // error already logged by checkProcessStartup
       }
 
+      // Do not rely solely on the log poller to notice that the child died: if the handler pool is
+      // busy or blocked, the exit goes unnoticed and the process, its scheduled tasks and its
+      // SwingInstance all leak. The reaper thread costs nothing and is never blocked.
+      process.onExit().thenRun(this::terminateAsync);
+
       initSessionLog(process);
 
       if (hasSessionLog) {
@@ -162,10 +183,11 @@ public class SwingProcessImpl implements SwingProcess {
           } catch (Exception e) {
             log.error("Failed to process process logs for application process {}", config.getName(),
                 e);
-            destroy();
+            terminateAsync();
+            return;
           }
           if (!SwingProcessImpl.this.isRunning()) {
-            destroy();
+            terminateAsync();
           }
         }
       }, LOG_POLLING_PERIOD, LOG_POLLING_PERIOD, TimeUnit.MILLISECONDS);
@@ -293,21 +315,73 @@ public class SwingProcessImpl implements SwingProcess {
     }
   }
 
+  /**
+   * Shuts the shared termination executor down. Called by SwingProcessServiceImpl#stop().
+   */
+  public static void shutdownTerminationExecutor() {
+    TERMINATION_EXECUTOR.shutdown();
+    try {
+      TERMINATION_EXECUTOR.awaitTermination(10, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
   public void destroy() {
     destroy(0);
+  }
+
+  /**
+   * Cancels this process' recurring tasks and performs the teardown on the
+   * {@link #TERMINATION_EXECUTOR}. Call this instead of {@link #destroy()} from anything running on
+   * {@link #processHandlerThread} or on a process reaper thread: the teardown chain reaches the
+   * browser websocket and may block for a long time on a half-open connection.
+   */
+  private void terminateAsync() {
+    cancelScheduledTasks();
+    try {
+      TERMINATION_EXECUTOR.execute(() -> {
+        if (!isRunning()) {
+          // the child is gone — capture whatever it printed before dying
+          drainRemainingOutput();
+        }
+        destroy(0);
+      });
+    } catch (RejectedExecutionException e) {
+      // executor already shut down (server stopping) — fall back to inline teardown
+      destroy(0);
+    }
+  }
+
+  private void cancelScheduledTasks() {
+    ScheduledFuture<?> lp = logsProcessor;
+    if (lp != null) {
+      lp.cancel(false);
+    }
+    ScheduledFuture<?> hb = heartbeat;
+    if (hb != null) {
+      hb.cancel(false);
+    }
+  }
+
+  private void drainRemainingOutput() {
+    if (process == null) {
+      return;
+    }
+    try {
+      drainStream(process.getInputStream(), config.getName(), false);
+      drainStream(process.getErrorStream(), config.getName(), true);
+    } catch (Exception e) {
+      log.warn("Failed to drain remaining output of application process {}", config.getName(), e);
+    }
   }
 
   public void destroy(int delayMs) {
     if (delayMs > 0 && delayedTermination == null) {
       log.info("Waiting " + delayMs + "ms for app process " + config.getName() + " to end.");
-      delayedTermination = processHandlerThread.schedule(new Runnable() {
-        @Override
-        public void run() {
-          destroy(0);
-        }
-      }, delayMs, TimeUnit.MILLISECONDS);
-    } else if (!destroying) {
-      destroying = true;
+      delayedTermination =
+          processHandlerThread.schedule(this::terminateAsync, delayMs, TimeUnit.MILLISECONDS);
+    } else if (destroying.compareAndSet(false, true)) {
       try {
         if (delayedTermination != null) {
           delayedTermination.cancel(false);
@@ -336,7 +410,10 @@ public class SwingProcessImpl implements SwingProcess {
         }
         // Stop the child logger's appenders
         childLog.getAppenders().values().forEach(LifeCycle::stop);
-        destroying = false;
+        // NOTE: the flag is deliberately NOT reset. Teardown is one-shot: the log poller, the
+        // Process.onExit() reaper and an explicit kill() can all race to terminate the same
+        // process, and running the close sequence twice would notify the browser and unregister
+        // the instance twice.
       }
     }
   }

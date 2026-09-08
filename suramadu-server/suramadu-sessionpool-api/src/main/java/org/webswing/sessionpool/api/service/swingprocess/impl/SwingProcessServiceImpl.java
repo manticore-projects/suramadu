@@ -54,17 +54,29 @@ public class SwingProcessServiceImpl implements SwingProcessService {
   private Map<String, SwingProcess> processMap = Collections.synchronizedMap(new HashMap<>());
   private Map<String, List<String>> pathInstanceMap = Collections.synchronizedMap(new HashMap<>());
 
+  /**
+   * Number of threads servicing the log pollers and stdin heartbeats of ALL running child
+   * processes. This used to be a single thread, which meant that one blocked task stalled the
+   * heartbeat of every other instance — the children then self-terminated with
+   * {@code ShutdownReason.ProcessKilled}. Override with
+   * {@code -Dwebswing.processHandler.threads=N}.
+   */
+  private static final int PROCESS_HANDLER_THREADS = Integer.getInteger(
+      "webswing.processHandler.threads", Math.max(4, Runtime.getRuntime().availableProcessors()));
+
   private ScheduledExecutorService processHandlerThread;
 
   @Override
   public void start() throws WsInitException {
-    processHandlerThread = Executors.newSingleThreadScheduledExecutor(
+    log.info("Starting Webswing Process Handler pool with {} threads.", PROCESS_HANDLER_THREADS);
+    processHandlerThread = Executors.newScheduledThreadPool(PROCESS_HANDLER_THREADS,
         NamedThreadFactory.getInstance("Webswing Process Handler"));
   }
 
   @Override
   public void stop() {
     processHandlerThread.shutdown();
+    SwingProcessImpl.shutdownTerminationExecutor();
   }
 
   @Override
