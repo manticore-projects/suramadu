@@ -186,13 +186,11 @@ public class BrowserWebSocketConnectionImpl extends AbstractWebSocketConnection
   @Override
   public void disconnect(String reason) {
     if (session != null && session.isOpen()) {
-      try {
-        session.close(new CloseReason(CloseCodes.NORMAL_CLOSURE, reason));
-      } catch (IOException e) {
-        log.error("Failed to disconnect browser connection, session [{}], instanceId [{}] {}",
-            session.getId(), instance == null ? null : instance.getInstanceId(), e.getMessage());
-        log.debug(e.getMessage(), e);
-      }
+      // Outbound frames are delivered asynchronously, so anything just handed to sendMessage() may
+      // still be queued. Queue the close behind it, otherwise the close frame overtakes the
+      // shutdown notice or goodbye redirect and the session vanishes with no explanation. This
+      // returns immediately; the close happens once the queue has drained.
+      closeWhenDrained(new CloseReason(CloseCodes.NORMAL_CLOSURE, reason));
     }
   }
 

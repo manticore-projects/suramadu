@@ -155,14 +155,9 @@ public class ApplicationWebSocketConnectionImpl extends AbstractWebSocketConnect
 
   private void disconnect(CloseCode closeCode, String reason) {
     if (session != null && session.isOpen()) {
-      try {
-        session.close(new CloseReason(closeCode, reason));
-      } catch (IOException e) {
-        log.error(
-            "Failed to disconnect application connection, session [{}], instanceId [{}], sessionPool [{}] {}",
-            session.getId(), instanceId, sessionPoolId, e.getMessage());
-        log.debug(e.getMessage(), e);
-      }
+      // see BrowserWebSocketConnectionImpl.disconnect() - the close is queued behind any frames
+      // still waiting to be delivered, and this call does not block
+      closeWhenDrained(new CloseReason(closeCode, reason));
     }
   }
 
