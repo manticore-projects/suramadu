@@ -2,6 +2,19 @@
 
 Changelog of suramadu.
 
+## 26.5.0 (2026-09-08)
+
+### Features
+
+-  report the shutdown reason from the application to the server ([d4a37](https://github.com/manticore-projects/suramadu/commit/d4a37dfacd2baaf) Andreas Reichel)  
+
+### Bug Fixes
+
+-  bound websocket sends and decouple process teardown ([2bf6a](https://github.com/manticore-projects/suramadu/commit/2bf6a35ecc1a9ed) Andreas Reichel)  
+
+### Other changes
+
+
 ## 26.4.7 (2026-08-06)
 
 ## 26.4.6 (2026-08-06)
