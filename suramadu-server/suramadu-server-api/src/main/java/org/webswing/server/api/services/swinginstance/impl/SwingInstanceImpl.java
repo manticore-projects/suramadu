@@ -383,7 +383,8 @@ public class SwingInstanceImpl implements Serializable, ConnectedSwingInstance {
       // toolkit leave these unset, hence the defaults.
       String exitReason = StringUtils.defaultIfBlank(e.getReason(), "unknown");
       String exitDetail = StringUtils.defaultIfBlank(e.getReasonDetail(), "no detail reported");
-      log.info("Instance [{}] is exiting on its own request: ({}) {} Process will be killed in {}ms.",
+      log.info(
+          "Instance [{}] is exiting on its own request: ({}) {} Process will be killed in {}ms.",
           getInstanceId(), exitReason, exitDetail, e.getWaitForExit());
       close("Closing instance: application requested shutdown (" + exitReason + ").");
       poolConnector.kill(getInstanceId(), e.getWaitForExit());
