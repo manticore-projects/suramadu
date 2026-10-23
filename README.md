@@ -1,12 +1,12 @@
 <div align="center">
 
-# Suramadu 26.5.0
+# Suramadu 27.0
 
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
-[![Version](https://img.shields.io/badge/Version-26.5.0-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
-[![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2026-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Version](https://img.shields.io/badge/Version-27.0-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
+[![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2027-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
 [![Build](https://img.shields.io/badge/Build-Gradle%20%7C%20Maven-02303A?style=for-the-badge&logo=gradle&logoColor=white)](https://gradle.org/)
@@ -56,9 +56,36 @@ Recommended standard OpenJDK distributions: [Eclipse Temurin](https://adoptium.n
 | 21 (LTS) | ✅ Supported  | Dec 2029 |                                       |
 | 23 | ✅ Supported  | ⛔ EOL (Mar 2025) | Non-LTS, 6-month lifecycle                                |
 | 25 (LTS) | ✅ Supported  | Sep 2031 | Current LTS                                               |
-| 26 | ✅ Supported  | Sep 2026 | Non-LTS; requires `--sun-misc-unsafe-memory-access=allow` |
+| 26 | ✅ Supported  | ⛔ EOL (Sep 2026) | Non-LTS; requires `--sun-misc-unsafe-memory-access=allow` |
+| **27** | ✅ **Supported** | Mar 2027 | Non-LTS; dedicated `*27` toolkit variant, selected automatically |
 
 All internal APIs adapted for the post-JDK-11 module system — no `--illegal-access=permit`, no `-noverify` required.
+
+JavaFX applications require JDK ≤ 26 — there is no JavaFX toolkit variant for JDK 27 yet; the launcher refuses the combination explicitly.
+
+### JDK 27 Support
+
+Suramadu 27.0 adds a dedicated toolkit variant (`suramadu-app-toolkit-java27`) for JDK 27,
+where the applet-era `sun.awt.AppContext` was removed from the JDK: `SunToolkit.postEvent()`
+lost its `AppContext` parameter, `SunToolkit.getDataTransferer()` moved to
+`sun.awt.ComponentFactory`, the `jdk.jsobject` module is gone, and
+`java.awt.peer.WindowPeer` gained `getAppropriateGraphicsConfiguration()`.
+
+Nothing to configure: the right variant is chosen per application JVM — the launcher puts
+exactly one of `suramadu-app-toolkit-java11` / `suramadu-app-toolkit-java27` on the boot
+classpath, and the patched `sun.awt.PlatformGraphicsInfo` selects by `Runtime.version()`.
+A JDK 27 session announces itself in the application log:
+
+```
+Loaded Webtoolkit org.webswing.toolkit.WebToolkit27
+Toolkit.toolkit field has been set to: org.webswing.toolkit.WebToolkit27@5a8e6209
+GraphicsEnvironment is org.webswing.toolkit.ge.WebGraphicsEnvironment27 (headless, JDK patch active)
+```
+
+On JDK 27 the launcher additionally passes `--enable-final-field-mutation=ALL-UNNAMED`
+([JEP 500](https://openjdk.org/jeps/500)) and serves `netscape.javascript.JSObject` from
+the boot classpath instead of patching the removed `jdk.jsobject` module. Server and
+application JVMs are independent — the Jetty server itself also runs on JDK 17–27.
 
 **Beware:** JetBrains Runtime modifies AWT's internal keyboard focus dispatch, which breaks when the toolkit is replaced. Mouse events are unaffected because they bypass the patched focus path.
 
@@ -112,17 +139,17 @@ The fork is hardened for the deployments it was built for.
 
 | Component | Version |
 |-----------|---------|
-| JDK | 17 or later (21+ recommended; [Eclipse Temurin](https://adoptium.net/)). A **headless** JDK distribution is sufficient on Linux servers — see below. |
+| JDK | 17 or later, up to and including **JDK 27** (21+ recommended; [Eclipse Temurin](https://adoptium.net/)). A **headless** JDK distribution is sufficient on Linux servers — see below. |
 
-**No X server, no Xvfb, no virtual framebuffer required.** Suramadu 26.5.0 runs truly headless on Linux via `--patch-module java.desktop` replacements for `GraphicsEnvironment`, `PlatformGraphicsInfo`, and `FontManagerFactory`. The standard `*-jre-headless` package from your distribution (or any JRE/JDK without the GUI dependencies) is enough. `DISPLAY` is explicitly unset by the startup script; nothing in the child Swing JVM ever calls into `libawt_xawt.so` or attempts a display connection.
+**No X server, no Xvfb, no virtual framebuffer required.** Suramadu runs truly headless on Linux via `--patch-module java.desktop` replacements for `GraphicsEnvironment`, `PlatformGraphicsInfo`, and `FontManagerFactory`. The standard `*-jre-headless` package from your distribution (or any JRE/JDK without the GUI dependencies) is enough. `DISPLAY` is explicitly unset by the startup script; nothing in the child Swing JVM ever calls into `libawt_xawt.so` or attempts a display connection.
 
 ### Quick Start
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-26.5.0.zip
-unzip suramadu-26.5.0.zip
-cd suramadu-26.5.0
+curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.0.0.zip
+unzip suramadu-27.0.0.zip
+cd suramadu-27.0.0
 
 # Start the server
 ./run.sh start
@@ -148,8 +175,8 @@ open http://localhost:8080
 
 | Tool   | Version |
 |--------|---------|
-| JDK    | 21+     |
-| Gradle | 8.12    |
+| JDK    | 17+ to run the build, **plus an installed JDK 27** — the `suramadu-app-toolkit-java27` module compiles with a JDK 27 toolchain (auto-detected from installed JDKs) |
+| Gradle | 9.+     |
 | Git    | 2.x     |
 
 > Node.js and npm are **automatically downloaded** during the build — no manual installation needed.
@@ -173,7 +200,7 @@ cd suramadu
 
 ```bash
 # Extract to your deployment directory
-unzip build/dist/suramadu-26.5.0.zip -d /opt/suramadu
+unzip build/dist/suramadu-27.0.0.zip -d /opt/suramadu
 
 # Configure your Swing application
 vim /opt/suramadu/suramadu.config
