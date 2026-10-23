@@ -13,8 +13,7 @@
     "build:main": "tsc -p tsconfig.json",
     "clean": "rimraf dist test",
     "type-check": "tsc --emitDeclarationOnly",
-    "proto": "pbjs -t static-module -w commonjs -o src/main/webapp/proto/dd.js --no-encode --no-create --no-verify --no-delimited ../src/proto/javascript/directdraw.proto && pbts -o src/main/webapp/proto/dd.d.ts src/main/webapp/proto/dd.js",
-    "start": "webpack serve --config webpack-dev.config.js"
+    "proto": "pbjs -t static-module -w commonjs -o src/main/webapp/proto/dd.js --no-encode --no-create --no-verify --no-delimited ../src/proto/javascript/directdraw.proto && pbts -o src/main/webapp/proto/dd.d.ts src/main/webapp/proto/dd.js"
   },
   "overrides": {
     "glob": "^12.0.0",
@@ -39,7 +38,6 @@
     "typescript": "^5.8.0",
     "webpack": "^5.105.0",
     "webpack-cli": "^7.0.0",
-    "webpack-dev-server": "^5.2.0",
     "webpack-merge": "^6.0.0"
   },
   "allowScripts": {

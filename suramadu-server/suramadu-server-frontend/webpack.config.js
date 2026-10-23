@@ -81,8 +81,6 @@ module.exports = {
     new CopyPlugin({
       patterns: [
         { from: ROOT + '/suramadu-init.js',                  to: DESTINATION + '/suramadu-init.js' },
-        { from: ROOT + '/admin-console-login-init.js',       to: DESTINATION + '/admin-console-login-init.js' },
-        { from: ROOT + '/admin-console-login-error-init.js', to: DESTINATION + '/admin-console-login-error-init.js' },
         { from: NODE_PATH + '/pdfjs-dist-viewer-min/build/minified/build', to: TARGET + '/print/build' },
         {
           from: NODE_PATH + '/pdfjs-dist-viewer-min/build/minified/web',

@@ -8,7 +8,6 @@
     "build-prod": "npm run clean && npm run proto && npm run type-check && webpack --config webpack-prd.config.js",
     "rebuild": "webpack --config webpack-rebuild.config.js",
     "clean": "rimraf .tmp",
-    "start": "npm run serve:dev",
     "type-check": "tsc --noEmit",
     "proto": "npm run proto-in && npm run proto-out && npm run proto-frame && npm run proto-common && npm run proto-ts-in && npm run proto-ts-out && npm run proto-ts-frame && npm run proto-ts-common",
     "proto-in": "pbjs -t static-module -w commonjs -o src/main/webapp/javascript/proto/proto.in.js --no-decode --no-verify --no-delimited ../../suramadu-app-toolkit/src/main/protobuf/AppFrameProtoIn.proto",
@@ -33,11 +32,12 @@
     "qs": "^6.16.0"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@types/jquery": "^3.5.0",
     "@types/jquery.fileupload": "^9.22.0",
     "@types/node": "^22.0.0",
-    "copy-webpack-plugin": "^14.0.0",
     "compression-webpack-plugin": "^12.0.0",
+    "copy-webpack-plugin": "^14.0.0",
     "css-loader": "^7.1.0",
     "html-loader": "^5.1.0",
     "html-webpack-plugin": "^5.6.6",
@@ -53,20 +53,18 @@
     "typescript": "^5.8.0",
     "webpack": "^5.105.0",
     "webpack-cli": "^7.0.0",
-    "webpack-dev-server": "^5.2.0",
-    "webpack-merge": "^6.0.0",
-    "@types/dompurify": "^3.0.5"
+    "webpack-merge": "^6.0.0"
   },
   "dependencies": {
+    "blueimp-file-upload": "^10.1.0",
+    "bootstrap-sass": "^3.4.3",
+    "dompurify": "^3.2.4",
     "jquery": "^3.7.0",
     "jquery-ui": "^1.14.0",
-    "bootstrap-sass": "^3.4.3",
-    "protobufjs": "^7.6.5",
-    "suramadu-directdraw-javascript": "../../suramadu-directdraw/suramadu-directdraw-javascript",
-    "blueimp-file-upload": "^10.1.0",
     "jquery.iframe-transport": "^1.0.0",
     "pdfjs-dist-viewer-min": "^2.4.456",
-    "dompurify": "^3.2.4"
+    "protobufjs": "^7.6.5",
+    "suramadu-directdraw-javascript": "../../suramadu-directdraw/suramadu-directdraw-javascript"
   },
   "allowScripts": {
     "@parcel/watcher": true,
