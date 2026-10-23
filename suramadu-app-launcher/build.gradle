@@ -2,6 +2,10 @@ dependencies {
     implementation project(':suramadu-app-toolkit')
     implementation project(':suramadu-app-toolkit-fx-java11')
     implementation project(':suramadu-app-toolkit-java11')
+    // JDK 27 toolkit variant. Both version JARs land in swing-boot; the child JVM's
+    // -Xbootclasspath/a: (SwingProcessServiceImpl) lists exactly ONE of them per app,
+    // so the duplicated WebDataTransfer/WebFont* classes never share a classpath.
+    implementation project(':suramadu-app-toolkit-java27')
     implementation project(':suramadu-modpatch:modpatch-jdk-jsobject')
 }
 

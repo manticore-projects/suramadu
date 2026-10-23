@@ -81,7 +81,13 @@ tasks.withType(Test).configureEach {
 // ─── Jar manifest ───────────────────────────────────────────────────
 tasks.withType(Jar).configureEach {
     manifest {
-        attributes('version': project.version)
+        attributes(
+                'version': project.version,
+                // Read at runtime via Package.getImplementationVersion() — e.g. the server
+                // launcher's startup banner when git.properties is not packaged.
+                'Implementation-Title': project.name,
+                'Implementation-Version': project.version,
+        )
     }
 }
 

@@ -49,7 +49,7 @@ public class Main {
 
   private static Map<String, List<PathMatcher>> loadWhitelists() {
     Properties props = new Properties();
-    try (InputStream in = Main.class.getClassLoader().getResourceAsStream(WHITELISTS_RESOURCE)) {
+    try (InputStream in = openWhitelistsStream()) {
       if (in == null) {
         System.out.println("[Main] WARNING: " + WHITELISTS_RESOURCE
             + " not found — no JAR filtering will be applied");
@@ -79,6 +79,24 @@ public class Main {
 
     System.out.println("[Main] Loaded whitelists: " + result.keySet());
     return result;
+  }
+
+  /**
+   * Resolves the whitelists resource for BOTH ways this class is loaded. Inside the webapp
+   * classloader the file is visible directly (it lives in WEB-INF/classes). When this class runs as
+   * the process entry point ("java -cp suramadu-server.war main.Main" — the server bootstrap and
+   * every child JVM), the classpath is the bare WAR, whose root does not contain the file — there
+   * it must be addressed by its full in-WAR path, the same way the WEB-INF/lib lookup in main()
+   * already works. Without this fallback the child JVMs loaded ALL of WEB-INF/lib (jetty, shiro,
+   * guice, ...) into the shared classloader.
+   */
+  private static InputStream openWhitelistsStream() {
+    InputStream in = Main.class.getClassLoader().getResourceAsStream(WHITELISTS_RESOURCE);
+    if (in == null) {
+      in = Main.class.getClassLoader()
+          .getResourceAsStream("WEB-INF/classes/" + WHITELISTS_RESOURCE);
+    }
+    return in;
   }
 
   public static void main(String[] mainArgs) {

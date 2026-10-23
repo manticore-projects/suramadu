@@ -8,8 +8,8 @@
  *
  * Belt-and-suspenders companion to the patched sun.awt.PlatformGraphicsInfo:
  *
- *   - PlatformGraphicsInfo.createGE()  → already returns WebGraphicsEnvironment11
- *   - GraphicsEnvironment.LocalGE.createGE() → also returns WebGraphicsEnvironment11,
+ *   - PlatformGraphicsInfo.createGE()  → already returns the matching WebGraphicsEnvironment
+ *   - GraphicsEnvironment.LocalGE.createGE() → also returns it,
  *     directly. If a future JDK ever stops calling PlatformGraphicsInfo from
  *     LocalGE, this patch still wins.
  *
@@ -41,18 +41,23 @@ public abstract class GraphicsEnvironment {
      * ── Webswing modification ─────────────────────────────────────────── Stock JDK delegates
      * unconditionally to {@code PlatformGraphicsInfo.createGE()}. Our version honours
      * {@code java.awt.graphicsenv} (restoring pre-JDK 21 behaviour where the property *was* read)
-     * and defaults to {@code WebGraphicsEnvironment11} when the property is unset.
+     * and defaults to the JDK-version-matching {@code WebGraphicsEnvironment} variant when the
+     * property is unset.
      *
      * No fallback to {@code PlatformGraphicsInfo.createGE()} here: that class is ALSO patched by us
-     * to return {@code WebGraphicsEnvironment11}, so a fallback would be redundant, and the
-     * cross-reference between two patched classes within the same {@code --patch-module} JAR
-     * confuses {@code javac}'s type resolution (it sees the stock
+     * to return the matching {@code WebGraphicsEnvironment} variant, so a fallback would be
+     * redundant, and the cross-reference between two patched classes within the same
+     * {@code --patch-module} JAR confuses {@code javac}'s type resolution (it sees the stock
      * {@code java.awt.GraphicsEnvironment} as a separate type from the patched one in the same
      * compilation unit).
      */
     private static GraphicsEnvironment createGE() {
-      String nm = System.getProperty("java.awt.graphicsenv",
-          "org.webswing.toolkit.ge.WebGraphicsEnvironment11");
+      // Version-aware default: *27 on JDK 27+, *11 otherwise (JDK 26 unsupported —
+      // see sun.awt.PlatformGraphicsInfo). java.awt.graphicsenv remains an
+      // explicit override; a launcher that pins ...11 via -D will break on 27.
+      String def = "org.webswing.toolkit.ge.WebGraphicsEnvironment"
+          + (Runtime.version().feature() >= 27 ? "27" : "11");
+      String nm = System.getProperty("java.awt.graphicsenv", def);
       try {
         return (GraphicsEnvironment) Class.forName(nm, true, ClassLoader.getSystemClassLoader())
             .getDeclaredConstructor().newInstance();
@@ -86,7 +91,7 @@ public abstract class GraphicsEnvironment {
     return defaultHeadless ? null
         : "\nNo X11 DISPLAY variable was set,\n" + "or no headful library support was found,\n"
             + "but this program performed an operation which requires it.\n"
-            + "Webswing note: this should not happen — WebGraphicsEnvironment11 "
+            + "Webswing note: this should not happen — the Webswing GraphicsEnvironment "
             + "should have been installed via the --patch-module mechanism.";
   }
 

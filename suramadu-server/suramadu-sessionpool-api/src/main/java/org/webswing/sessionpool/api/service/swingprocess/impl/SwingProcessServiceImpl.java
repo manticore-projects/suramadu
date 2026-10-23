@@ -145,11 +145,6 @@ public class SwingProcessServiceImpl implements SwingProcessService {
           startupParams.getSubs().replace(startupParams.getAppConfig().getJavaVersion());
       boolean useJFX = startupParams.getAppConfig().isJavaFx();
 
-      // All JDK 11+ use the "11" suffix classes
-      String webToolkitClass = WEB_TOOLKIT_CLASS_NAME + "11";
-      String webFxToolkitFactory = JAVA_FX_TOOLKIT_CLASS_NAME + "11";
-      String webGraphicsEnvClass = WEB_GRAPHICS_ENV_CLASS_NAME + "11";
-
       // Verify JDK 11+ (parse major version from strings like "11", "17", "21.0.10", etc.)
       int majorVersion;
       try {
@@ -165,6 +160,21 @@ public class SwingProcessServiceImpl implements SwingProcessService {
         throw new RuntimeException(
             "Java version not supported. JDK 11 or later is required (detected: " + javaVersion
                 + ").");
+      }
+      // JDK 11-26 → "11" suffix classes (sun.awt.AppContext still present through 26);
+      // JDK 27+ → "27" suffix classes (single-arg SunToolkit.postEvent, no AppContext,
+      // ComponentFactory.getDataTransferer, no jdk.jsobject module).
+      // Must match the version selection in the patched sun.awt.PlatformGraphicsInfo.
+      String variant = majorVersion >= 27 ? "27" : "11";
+      String webToolkitClass = WEB_TOOLKIT_CLASS_NAME + variant;
+      String webGraphicsEnvClass = WEB_GRAPHICS_ENV_CLASS_NAME + variant;
+      // No JavaFX toolkit build exists for JDK 27 — only suramadu-app-toolkit-fx-java11.
+      String webFxToolkitFactory = JAVA_FX_TOOLKIT_CLASS_NAME + "11";
+      if (useJFX && majorVersion >= 27) {
+        log.error("JavaFX is not supported on JDK {} — no suramadu-app-toolkit-fx-java27 exists.",
+            javaVersion);
+        throw new RuntimeException(
+            "JavaFX apps require JDK 11-25 (no JavaFX toolkit build for JDK " + javaVersion + ").");
       }
 
       // JavaFX classpath setup
@@ -188,14 +198,20 @@ public class SwingProcessServiceImpl implements SwingProcessService {
       // ── Module system flags (JDK 11+) ──────────────────────────────────
       StringBuilder modules = new StringBuilder();
 
-      // Patch modules: WebSwing toolkit overrides
-      modules.append(" --patch-module jdk.jsobject=")
-          .append(CommonUtil.getBootClassPathForClass(JAVA9_PATCHED_JSOBJECT_MODULE_MARKER));
+      // Patch modules: WebSwing toolkit overrides.
+      // The jdk.jsobject module was removed in JDK 27 — patching it there only emits
+      // "Unknown module" warnings and netscape.javascript.JSObject would not exist at all.
+      // On 27+ the patched JSObject JAR is appended to -Xbootclasspath/a: instead (below).
+      String jsObjectJarPath =
+          CommonUtil.getBootClassPathForClass(JAVA9_PATCHED_JSOBJECT_MODULE_MARKER);
+      if (majorVersion < 27) {
+        modules.append(" --patch-module jdk.jsobject=").append(jsObjectJarPath);
+        modules.append(" --add-reads jdk.jsobject=ALL-UNNAMED");
+      }
       // NOTE: --patch-module java.desktop is built later (after resolveJdkPatchJar()) so that
       // the shell-folder-manager path and the headless patch JAR path can be merged into a
       // single --patch-module argument. Passing --patch-module java.desktop= twice is a JVM
       // error ("specified more than once") on strict JDK distributions (e.g. Liberica).
-      modules.append(" --add-reads jdk.jsobject=ALL-UNNAMED");
 
       // --add-opens: reflective access needed by WebSwing internals
       modules.append(" --add-opens=java.base/java.net=ALL-UNNAMED"); // URLStreamHandler in
@@ -204,8 +220,9 @@ public class SwingProcessServiceImpl implements SwingProcessService {
       // SwingClassloader
       modules.append(" --add-opens=java.base/java.lang.reflect=ALL-UNNAMED"); // Field.setAccessible
       // in Main/WebToolkit
-      modules.append(" --add-opens=java.base/sun.misc=ALL-UNNAMED"); // Unsafe in WebToolkit.init()
-      // GE replacement
+      // (removed: --add-opens=java.base/sun.misc — sun.misc lives in jdk.unsupported, not
+      // java.base, so the flag never did anything but emit an "Unknown package" warning; the
+      // Unsafe-based GE replacement it was meant for is gone since the --patch-module approach.)
       modules.append(" --add-opens=java.desktop/java.awt=ALL-UNNAMED"); // EventQueue in SwingMain
       modules.append(" --add-opens=java.desktop/java.awt.event=ALL-UNNAMED"); // KeyEvent.extendedKeyCode
       // in Util
@@ -233,24 +250,49 @@ public class SwingProcessServiceImpl implements SwingProcessService {
       modules.append(" --add-exports=java.desktop/sun.java2d.pipe=ALL-UNNAMED");
       modules.append(" --add-exports=java.desktop/sun.font=ALL-UNNAMED");
       modules.append(" --add-exports=java.desktop/sun.print=ALL-UNNAMED");
-      modules.append(" --add-exports=java.base/sun.security.action=ALL-UNNAMED");
+      if (majorVersion < 27) {
+        // sun.security.action was removed in JDK 27 (SecurityManager cleanup); exporting it
+        // there only produces a "package sun.security.action not in java.base" warning.
+        modules.append(" --add-exports=java.base/sun.security.action=ALL-UNNAMED");
+      }
       modules.append(" --add-exports=java.base/sun.security.util=ALL-UNNAMED");
       modules.append(" --add-exports=java.base/sun.nio.cs=ALL-UNNAMED");
 
       // JNA
       modules.append(" --enable-native-access=ALL-UNNAMED");
 
+      if (majorVersion >= 27) {
+        // JEP 500 (final means final): SwingMain reflectively writes the (now final)
+        // EventQueue.classLoader field. Works on 27 but warns, and will be blocked in a
+        // future release without this flag. The flag does not exist on JDK <= 25, where
+        // it would be a fatal unknown option — hence the version guard.
+        modules.append(" --enable-final-field-mutation=ALL-UNNAMED");
+      }
+
       // ── Boot classpath ──────────────────────────────────────────────────
       String webSwingToolkitApiJarPath = CommonUtil.getBootClassPathForClass(WEB_API_CLASS_NAME);
       String webSwingCommonJarPath = CommonUtil.getBootClassPathForClass(Constants.class.getName());
       String webSwingToolkitJarPath = CommonUtil.getBootClassPathForClass(WEB_TOOLKIT_CLASS_NAME);
+      // Resolves to the version-specific toolkit JAR (java11 or java27). Exactly ONE of the
+      // two may be on the boot classpath: both ship identical-source copies of
+      // WebDataTransfer/WebFontManager/WebFontConfiguration, but the java27 copies are
+      // class-file v71 and would kill a <= 25 JVM if picked up first.
       String webSwingToolkitJarPathSpecific = CommonUtil.getBootClassPathForClass(webToolkitClass);
-      String shellFolderMgrJarPath =
-          File.pathSeparator + CommonUtil.getBootClassPathForClass(SHELL_FOLDER_MANAGER);
 
-      String bootCp = "-Xbootclasspath/a:" + webSwingToolkitApiJarPath + File.pathSeparatorChar
-          + webSwingCommonJarPath + File.pathSeparatorChar + webSwingToolkitJarPathSpecific
-          + File.pathSeparatorChar + webSwingToolkitJarPath + shellFolderMgrJarPath;
+      // LinkedHashSet: several lookups can resolve to the same JAR (Constants lives in the
+      // base toolkit JAR), which previously put it on the boot classpath twice.
+      LinkedHashSet<String> bootJars = new LinkedHashSet<>();
+      bootJars.add(webSwingToolkitApiJarPath);
+      bootJars.add(webSwingCommonJarPath);
+      bootJars.add(webSwingToolkitJarPathSpecific);
+      bootJars.add(webSwingToolkitJarPath);
+      bootJars.add(CommonUtil.getBootClassPathForClass(SHELL_FOLDER_MANAGER));
+      if (majorVersion >= 27) {
+        // jdk.jsobject module no longer exists — serve netscape.javascript.JSObject from the
+        // patched JAR on the boot classpath instead of via --patch-module (see above).
+        bootJars.add(jsObjectJarPath);
+      }
+      String bootCp = "-Xbootclasspath/a:" + String.join(File.pathSeparator, bootJars);
 
       // ── Debug flags ─────────────────────────────────────────────────────
       // Use modern JDWP syntax (no -Xnoagent/-Djava.compiler=NONE, those are JDK 1.3 era)
@@ -282,39 +324,47 @@ public class SwingProcessServiceImpl implements SwingProcessService {
       // First existing file wins. If none exist, the child JVM falls back to
       // requiring Xvfb (a warning is logged).
       String patchJar = resolveJdkPatchJar();
-      // Build a single --patch-module java.desktop=<paths> argument combining:
-      // 1. The shell-folder-manager JAR (always needed for PublicShellFolderManager)
-      // 2. The headless patch JAR (replaces PlatformGraphicsInfo, optional)
-      // Both paths are joined with File.pathSeparatorChar so the JVM sees only one
-      // --patch-module java.desktop directive — passing it twice is a fatal error on
-      // strict JDK distributions such as Liberica.
+      // Build a single --patch-module java.desktop=<paths> argument. The modpatch-java-desktop
+      // JAR carries PublicShellFolderManager AND the headless patches (PlatformGraphicsInfo,
+      // GraphicsEnvironment, FontManagerFactory), so the shell-folder path below normally IS
+      // the headless patch already; a separate patch JAR (webswing.jdkPatchJar / rootDir
+      // discovery) remains only as an override. Both paths are joined with pathSeparatorChar so
+      // the JVM sees only one --patch-module java.desktop directive — passing it twice is a
+      // fatal error on strict JDK distributions such as Liberica.
       String shellFolderJarPath = CommonUtil.getBootClassPathForClass(SHELL_FOLDER_MANAGER);
+      boolean headlessPatchIncluded =
+          jarContainsEntry(CommonUtil.getBootClassPathForClass(SHELL_FOLDER_MANAGER, false),
+              "sun/awt/PlatformGraphicsInfo.class");
       String patchModule;
       if (patchJar != null) {
-        log.info("Using JDK patch JAR for headless operation: {}", patchJar);
+        log.info("Using JDK patch JAR override for headless operation: {}", patchJar);
         patchModule = " --patch-module java.desktop=" + shellFolderJarPath + File.pathSeparatorChar
             + patchJar;
+      } else if (headlessPatchIncluded) {
+        log.info("Headless JDK patch (PlatformGraphicsInfo) included in {}", shellFolderJarPath);
+        patchModule = " --patch-module java.desktop=" + shellFolderJarPath;
       } else {
-        log.warn("No JDK patch JAR found — child JVM will require Xvfb or a real X server. "
-            + "Set -Dwebswing.jdkPatchJar=/path/to/jar to enable truly headless mode.");
+        log.warn("No JDK patch found (not in {} and no separate patch JAR) — child JVM will "
+            + "require Xvfb or a real X server. Set -Dwebswing.jdkPatchJar=/path/to/jar to "
+            + "enable truly headless mode.", shellFolderJarPath);
         patchModule = " --patch-module java.desktop=" + shellFolderJarPath;
       }
 
       processConfig.setJvmArgs(modules + " " + bootCp + debug + patchModule // headless: replaces
-                                                                            // PlatformGraphicsInfo
+      // PlatformGraphicsInfo
           + " -Djavax.sound.sampled.Clip=org.webswing.audio.AudioMixerProvider"
           + " -Dsun.font.fontmanager=org.webswing.toolkit.ge.WebFontManager" // headless: prevents
-                                                                             // X11FontManager from
-                                                                             // being
-                                                                             // cached by
-                                                                             // FontManagerFactory.getInstance()
-                                                                             // —
-                                                                             // X11FontManager's
-                                                                             // native
-                                                                             // getFontPathNative()
-                                                                             // in libawt_xawt.so
-                                                                             // segfaults without
-                                                                             // X11.
+          // X11FontManager from
+          // being
+          // cached by
+          // FontManagerFactory.getInstance()
+          // —
+          // X11FontManager's
+          // native
+          // getFontPathNative()
+          // in libawt_xawt.so
+          // segfaults without
+          // X11.
           + " -Dsun.java2d.opengl=false" // no GLX probe on headless Linux
           + " -Dsun.java2d.xrender=false" // no XRender JNI load on headless Linux
           + " -Dsun.java2d.noddraw=true" // no DirectDraw on Windows (no-op elsewhere)
@@ -571,6 +621,15 @@ public class SwingProcessServiceImpl implements SwingProcessService {
    * </ol>
    * Returns the path of the first existing file, or {@code null} if none found.
    */
+  /** True when the JAR at {@code jarPath} contains the given entry; false on any IO error. */
+  private static boolean jarContainsEntry(String jarPath, String entry) {
+    try (java.util.jar.JarFile jf = new java.util.jar.JarFile(jarPath)) {
+      return jf.getEntry(entry) != null;
+    } catch (IOException e) {
+      return false;
+    }
+  }
+
   private String resolveJdkPatchJar() {
     String explicit = System.getProperty("webswing.jdkPatchJar", "").trim();
     if (!explicit.isEmpty() && new File(explicit).isFile()) {

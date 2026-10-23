@@ -24,9 +24,14 @@ import java.awt.Toolkit;
  * to be present.
  *
  * <p>
- * This patch replaces {@code createGE()} with a version that returns
- * {@link org.webswing.toolkit.ge.WebGraphicsEnvironment11} directly, so the X11 path is never taken
+ * This patch replaces {@code createGE()} with a version that returns the Webswing
+ * {@code WebGraphicsEnvironment} variant matching the running JDK, so the X11 path is never taken
  * at all.
+ *
+ * <p>
+ * JDK version selection: {@code Runtime.version().feature() >= 27} selects the {@code *27} toolkit
+ * variant (single-arg {@code SunToolkit.postEvent}, no {@code sun.awt.AppContext}); anything older
+ * — JDK 26 included, where AppContext still exists — selects the {@code *11} variant.
  *
  * <p>
  * Requirements:
@@ -39,8 +44,12 @@ import java.awt.Toolkit;
  */
 public class PlatformGraphicsInfo {
 
-  private static final String WEB_GE_CLASS = "org.webswing.toolkit.ge.WebGraphicsEnvironment11";
-  private static final String WEB_TOOLKIT_CLASS = "org.webswing.toolkit.WebToolkit11";
+  /** "27" on JDK 27+, otherwise "11". */
+  private static final String VARIANT = Runtime.version().feature() >= 27 ? "27" : "11";
+
+  private static final String WEB_GE_CLASS =
+      "org.webswing.toolkit.ge.WebGraphicsEnvironment" + VARIANT;
+  private static final String WEB_TOOLKIT_CLASS = "org.webswing.toolkit.WebToolkit" + VARIANT;
 
   /**
    * Returns a Webswing {@link GraphicsEnvironment} instead of the JDK's hardcoded
@@ -60,9 +69,10 @@ public class PlatformGraphicsInfo {
   }
 
   /**
-   * Safety net only. Webswing sets {@code awt.toolkit} explicitly in {@code Main.java}, so
-   * {@code Toolkit.getDefaultToolkit()} normally never reaches this method. If it ever does (some
-   * startup ordering change in a future JDK), instantiate WebToolkit11 directly.
+   * On JDK 21–25 this was a safety net ({@code awt.toolkit} set by the launcher still worked). On
+   * JDK 27, {@code Toolkit.getDefaultToolkit()} calls {@code PlatformGraphicsInfo.createToolkit()}
+   * directly and the {@code awt.toolkit} property is dead — this method IS the toolkit selection
+   * point. A {@code -Dawt.toolkit=...} in the launcher's child JVM args is ignored by the JDK.
    */
   public static Toolkit createToolkit() {
     try {
@@ -100,10 +110,11 @@ public class PlatformGraphicsInfo {
    * and segfaults during {@code getFontPathNative()} when no X11 display is reachable.
    *
    * <p>
-   * This is consulted by {@code sun.font.FontManagerFactory.getInstance()} when the
-   * {@code sun.font.fontmanager} system property is not set OR (newer JDK versions) when the
-   * factory ignores the property entirely. Returning the Webswing font manager here closes the last
-   * X11 dependency in the AWT initialisation chain.
+   * Note: on JDK 27 the stock {@code sun.font.FontManagerFactory} no longer consults any property
+   * or this method — it hardcodes {@code sun.font.PlatformFontInfo.createFontManager()} (which
+   * returns {@code X11FontManager} on Linux). Our patched {@code FontManagerFactory} replaces that
+   * class entirely, which closes the last X11 dependency; this method is kept for older JDKs /
+   * shape compatibility.
    */
   public static String getDefaultFontManagerClassName() {
     return "org.webswing.toolkit.ge.WebFontManager";

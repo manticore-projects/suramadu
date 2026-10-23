@@ -1,0 +1,48 @@
+dependencies {
+    implementation project(':suramadu-app-toolkit')
+}
+
+// This module MUST be compiled with JDK 27: it uses the single-argument
+// SunToolkit.postEvent(AWTEvent) that replaced postEvent(AppContext, AWTEvent)
+// when sun.awt.AppContext was removed. The base ':suramadu-app-toolkit' and
+// ':suramadu-app-toolkit-java11' stay on the conventions toolchain (17) — they
+// still compile against targetToAppContext(), which no longer exists in 27.
+//
+// The --add-exports set comes from suramadu.java-conventions (jvmAddExports),
+// which already covers everything this module touches (sun.awt, sun.awt.datatransfer,
+// sun.awt.image, sun.font, sun.java2d, java.awt.peer, java.base/sun.nio.cs) —
+// no module-local compilerArgs needed.
+//
+// sourceCompatibility/targetCompatibility are set explicitly: the class files are
+// intentionally v71 — they must never load on a pre-27 JVM, and the launcher
+// (SwingProcessServiceImpl) guarantees only one version JAR per boot classpath.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+    sourceCompatibility = '27'
+    targetCompatibility = '27'
+}
+
+// Producer-side resolution fix: the java plugin advertises this module's variants with
+// org.gradle.jvm.version=27, which makes every 17-toolchain consumer refuse it —
+// transitively (app-launcher → app-services → war → ...). Those consumers only ever
+// PACKAGE the JAR (swing-boot / WEB-INF/lib); nothing loads these classes before the
+// child-JVM launcher puts them on a JDK 27 boot classpath. Advertising 17 makes the
+// project resolvable repo-wide without per-consumer disableAutoTargetJvm() calls, and
+// keeps Gradle's jvm-version check active everywhere else (relevant with the '+'
+// dependency ranges in this build).
+[configurations.apiElements, configurations.runtimeElements].each { c ->
+    c.attributes.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+}
+
+// PMD off for this module for now: the sources mirror the java11 module (already partly
+// excluded from PMD) and compile only against JDK 27 internals. Re-enable once PMD's
+// java grammar/classpath handling is confirmed against the 27 toolchain.
+tasks.withType(Pmd).configureEach {
+    enabled = false
+}
+
+jar {
+    archiveBaseName = 'suramadu-app-toolkit-java27'
+}

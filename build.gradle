@@ -41,13 +41,11 @@ subprojects {
         compileOnly "org.eclipse.jetty.toolchain:jetty-javax-websocket-api:${jettyWebsocketApiVersion}"
     }
 
-    java {
-        toolchain {
-            sourceCompatibility = '17'
-            targetCompatibility = '17'
-            languageVersion.set(JavaLanguageVersion.of(17))
-        }
-    }
+    // Toolchain lives in suramadu.java-conventions (17), overridden per-module where
+    // needed (suramadu-app-toolkit-java27 → 27). The block that used to sit here also
+    // assigned sourceCompatibility/targetCompatibility INSIDE toolchain{} — those are not
+    // toolchain properties, so Groovy delegated them up to the java extension, silently
+    // pinning -source/-target 17 on every module and clobbering per-module toolchains.
 
     spotbugs {
         excludeFilter = rootProject.file("config/spotbugs/spotBugsExcludeFilter.xml")
@@ -155,11 +153,9 @@ if (project.hasProperty('release')) {
                 java {
                     withSourcesJar()
                     withJavadocJar()
-                    sourceCompatibility = '17'
-                    targetCompatibility = '17'
-                    toolchain {
-                        languageVersion.set(JavaLanguageVersion.of(17))
-                    }
+                    // No toolchain/sourceCompatibility here: suramadu.java-conventions pins 17,
+                    // and re-asserting it would clobber modules with their own toolchain
+                    // (suramadu-app-toolkit-java27 → 27).
                 }
             }
         }

@@ -22,6 +22,7 @@ include 'suramadu-app-toolkit'
 include 'suramadu-app-toolkit-fx'
 include 'suramadu-app-toolkit-fx-java11'
 include 'suramadu-app-toolkit-java11'
+include 'suramadu-app-toolkit-java27'
 include 'suramadu-app-launcher'
 include 'suramadu-app-services'
 

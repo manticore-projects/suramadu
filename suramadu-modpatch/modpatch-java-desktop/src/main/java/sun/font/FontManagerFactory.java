@@ -20,8 +20,11 @@ import java.security.PrivilegedAction;
  * 
  * and only consults the {@code sun.font.fontmanager} system property as an override. In practice,
  * setting that property at JVM startup has been observed not to take effect on JDK 26 (the X11
- * default is still selected). Even when the property *is* honoured, the choice of default matters
- * because some code paths instantiate the default class directly.
+ * default is still selected) — explained on JDK 27, where the stock class was restructured: it no
+ * longer reads ANY property and hardcodes {@code sun.font.PlatformFontInfo.createFontManager()}
+ * ({@code X11FontManager} on Linux). {@code PlatformFontInfo} is only ever called from here, so
+ * replacing this class fully covers it. Even when the property *is* honoured, the choice of default
+ * matters because some code paths instantiate the default class directly.
  *
  * <p>
  * This patched version defaults to {@code org.webswing.toolkit.ge.WebFontManager} on every platform
