@@ -4,7 +4,6 @@ import org.webswing.directdraw.DirectDraw;
 import org.webswing.directdraw.model.*;
 import org.webswing.directdraw.proto.Directdraw.DrawConstantProto;
 import org.webswing.directdraw.proto.Directdraw.DrawInstructionProto.InstructionProto;
-import org.webswing.directdraw.proto.Directdraw.FontFaceProto;
 import org.webswing.directdraw.proto.Directdraw.WebImageProto;
 import org.webswing.directdraw.util.DirectDrawUtils;
 import org.webswing.directdraw.util.DrawConstantPool;
@@ -241,14 +240,11 @@ public class WebImage extends Image {
 
     DirectDrawUtils.optimizeInstructions(dd, instructions);
 
-    // build proto message
+    // build proto message — one reusable constant buffer instead of two fresh
+    // ArrayLists per instruction
+    List<DrawConstantProto> constProtos = new ArrayList<>();
     for (DrawInstruction instruction : instructions) {
-      List<FontFaceProto> fontProtos = new ArrayList<>();
-      for (FontFaceConst fontConst : constantPool.registerRequestedFonts()) {
-        fontProtos.add(fontConst.toMessage());
-      }
-
-      List<DrawConstantProto> constProtos = new ArrayList<>();
+      constProtos.clear();
       for (DrawConstant<?> cons : instruction) {
         if (cons instanceof CompositeDrawConstantHolder<?> composite) {
           composite.expandAndCacheConstants(constProtos, constantPool);
@@ -257,10 +253,16 @@ public class WebImage extends Image {
           cons.setId(id);
         }
       }
-
-      webImageBuilder.addAllFontFaces(fontProtos);
       webImageBuilder.addAllConstants(constProtos);
       webImageBuilder.addInstructions(instruction.toMessage(dd));
+    }
+    // Drain requested fonts ONCE. Fonts are requested at paint time (WebGraphics /
+    // DrawInstructionFactory), so they are all queued before this method runs; the old
+    // per-instruction drain was pure allocation churn and additionally missed fonts requested
+    // by the last instruction's constants (they only shipped with the NEXT frame). Protobuf
+    // field order is tag-based, so the position of fontFaces in the message is irrelevant.
+    for (FontFaceConst fontConst : constantPool.registerRequestedFonts()) {
+      webImageBuilder.addFontFaces(fontConst.toMessage());
     }
     webImageBuilder.setWidth(size.width);
     webImageBuilder.setHeight(size.height);

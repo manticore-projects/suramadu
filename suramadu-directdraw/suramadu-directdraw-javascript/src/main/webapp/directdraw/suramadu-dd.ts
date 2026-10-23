@@ -64,8 +64,8 @@ export class DirectDraw {
         }
     }
 
-    public static toImageLoaded(image: Uint8Array | HTMLImageElement): HTMLImageElement {
-        return image as HTMLImageElement;
+    public static toImageLoaded(image: Uint8Array | HTMLImageElement | ImageBitmap): HTMLImageElement | ImageBitmap {
+        return image as HTMLImageElement | ImageBitmap;
     }
 
     public static toTx(t:ITransformProto):Tx{
@@ -965,22 +965,7 @@ export class DirectDraw {
         return new Promise<void>((resolve, reject) => {
             try {
                 if (images.length > 0) {
-                    const loadedImages = images.map((image) => {
-                        return new Promise<void>((resolveImg) => {
-                            const img = new Image();
-                            const dataurl=DirectDraw.getImageData(image.data as Uint8Array);
-                            if(dataurl) {
-                                img.onload = () => {
-                                    image.data = img;
-                                    resolveImg();
-                                };
-                                img.src = dataurl
-                            }else{
-                                image.data = img;
-                                resolveImg();
-                            }
-                        });
-                    });
+                    const loadedImages = images.map((image) => this.prepareImage(image));
                     Promise.all(loadedImages).then(() => resolve());
                 } else {
                     resolve();
@@ -988,6 +973,46 @@ export class DirectDraw {
             } catch (e) {
                 this.config.onErrorMessage(e as Error);
                 reject(e);
+            }
+        });
+    }
+
+    /**
+     * Decodes one PNG constant. Primary path: createImageBitmap(Blob) — no base64 (the old
+     * toBase64 built the string one character at a time over the whole PNG), decoding happens
+     * off the main thread, and ImageBitmap is directly drawable by drawImage/createPattern.
+     * Falls back to the legacy data-URL Image path if createImageBitmap is unavailable or
+     * rejects (e.g. truncated data).
+     */
+    private prepareImage(image: DecodedProtoImage): Promise<void> {
+        const data = image.data as Uint8Array;
+        if (data == null || data.byteLength === 0 || !(data instanceof Uint8Array)) {
+            image.data = new Image();
+            return Promise.resolve();
+        }
+        if (typeof createImageBitmap === "function") {
+            return createImageBitmap(new Blob([data as BlobPart], { type: "image/png" }))
+                .then((bitmap) => {
+                    image.data = bitmap;
+                })
+                .catch(() => this.prepareImageLegacy(image, data));
+        }
+        return this.prepareImageLegacy(image, data);
+    }
+
+    private prepareImageLegacy(image: DecodedProtoImage, data: Uint8Array): Promise<void> {
+        return new Promise<void>((resolveImg) => {
+            const img = new Image();
+            const dataurl = DirectDraw.getImageData(data);
+            if (dataurl) {
+                img.onload = () => {
+                    image.data = img;
+                    resolveImg();
+                };
+                img.src = dataurl;
+            } else {
+                image.data = img;
+                resolveImg();
             }
         });
     }
@@ -1344,7 +1369,7 @@ export class DirectDraw {
             };
 
             const drawImageOriginal = ctx.drawImage;
-            ctx.drawImage = function (image: HTMLImageElement | HTMLCanvasElement, dx: number, dy: number, dw?: number, dh?: number, sx?: number, sy?: number, sw?: number, sh?: number) {
+            ctx.drawImage = function (image: HTMLImageElement | HTMLCanvasElement | ImageBitmap, dx: number, dy: number, dw?: number, dh?: number, sx?: number, sy?: number, sw?: number, sh?: number) {
                 this.pathBBox = emptyBBox();
                 this.setBoundingBox();
                 return drawImageOriginal.call(this, image, dx, dy, dw, dh, sx, sy, sw, sh);
@@ -1430,8 +1455,8 @@ interface ICanvasCtx {
     bezierCurveTo: (cp1x: number, cp1y: number, cp2x: number, cp2y: number, x: number, y: number) => void,
     rect: (x: number, y: number, w: number, h: number) => void,
     fill: (fillRule?: "evenodd" | "nonzero" | undefined) => void,
-    drawImage: (image: HTMLImageElement | HTMLCanvasElement, dx: number, dy: number, dw?: number, dh?: number, sx?: number, sy?: number, sw?: number, sh?: number) => void,
-    createPattern: (image: HTMLImageElement | HTMLCanvasElement, repetition: string) => CanvasPattern|null,
+    drawImage: (image: HTMLImageElement | HTMLCanvasElement | ImageBitmap, dx: number, dy: number, dw?: number, dh?: number, sx?: number, sy?: number, sw?: number, sh?: number) => void,
+    createPattern: (image: HTMLImageElement | HTMLCanvasElement | ImageBitmap, repetition: string) => CanvasPattern|null,
     createLinearGradient: (x0:number, y0:number, x1:number, y1:number)=>CanvasGradient,
     createRadialGradient:(x0:number, y0:number, r0:number, x1:number, y1:number, r1:number)=>CanvasGradient,
     stroke: () => void,
@@ -1467,7 +1492,7 @@ type XorModeCanvasCtx = ICanvasCtx & {
     transfomMatrix: [number, number, number, number, number, number]
 }
 
-type DecodedProtoImage = IImageProto | IGlyphProto | { data: HTMLImageElement }
+type DecodedProtoImage = IImageProto | IGlyphProto | { data: HTMLImageElement | ImageBitmap }
 
 interface IGraphicsState {
     transform: Tx;

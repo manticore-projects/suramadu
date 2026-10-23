@@ -288,8 +288,13 @@ public class RenderUtil {
   }
 
   public static BufferedImage getImage(int index, DrawInstruction instruction) {
+    DrawConstant<?> c = instruction.getArg(index);
+    if (c instanceof org.webswing.directdraw.model.ImageConst ic && ic.getImage() != null) {
+      // Lazy ImageConst still holds the original image — skip the PNG encode+decode round trip.
+      return ic.getImage();
+    }
     try {
-      return ImageIO.read(new ByteArrayInputStream((byte[]) getValue(index, instruction)));
+      return ImageIO.read(new ByteArrayInputStream((byte[]) c.getValue()));
     } catch (IOException e) {
       e.printStackTrace();
     }
