@@ -2,6 +2,19 @@
 
 Changelog of suramadu.
 
+## 26.5.1 (2026-10-01)
+
+### Features
+
+-  **server**  auto-detect keystore format, resolve OBF: passwords and make truststore optional ([ae095](https://github.com/manticore-projects/suramadu/commit/ae095d0d67a9e4b) Andreas Reichel)  
+
+### Bug Fixes
+
+-  restore protoc regeneration under Gradle 9 ([88879](https://github.com/manticore-projects/suramadu/commit/8887970878c1584) Andreas Reichel)  
+
+### Other changes
+
+
 ## 26.5.0 (2026-09-08)
 
 ### Features
