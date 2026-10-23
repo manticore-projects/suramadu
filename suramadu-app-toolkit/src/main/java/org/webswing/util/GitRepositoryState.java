@@ -30,32 +30,35 @@ public class GitRepositoryState {
   String buildVersion; // =${git.build.version}
 
   public GitRepositoryState(Properties properties) {
-    this.tags = String.valueOf(properties.get("git.tags"));
-    this.branch = String.valueOf(properties.get("git.branch"));
-    this.dirty = String.valueOf(properties.get("git.dirty"));
-    this.remoteOriginUrl = String.valueOf(properties.get("git.remote.origin.url"));
+    // Properties.getProperty returns null for missing keys. The previous
+    // String.valueOf(properties.get(...)) turned every missing key into the literal
+    // string "null", which then survived null checks downstream (e.g. the server
+    // startup banner printing "version=null").
+    this.tags = properties.getProperty("git.tags");
+    this.branch = properties.getProperty("git.branch");
+    this.dirty = properties.getProperty("git.dirty");
+    this.remoteOriginUrl = properties.getProperty("git.remote.origin.url");
 
-    this.commitId = String.valueOf(properties.get("git.commit.id.full")); // OR
-                                                                          // properties.get("git.commit.id")
-                                                                          // depending on your
-                                                                          // configuration
-    this.commitIdAbbrev = String.valueOf(properties.get("git.commit.id.abbrev"));
-    this.describe = String.valueOf(properties.get("git.commit.id.describe"));
-    this.describeShort = String.valueOf(properties.get("git.commit.id.describe-short"));
-    this.commitUserName = String.valueOf(properties.get("git.commit.user.name"));
-    this.commitUserEmail = String.valueOf(properties.get("git.commit.user.email"));
-    this.commitMessageFull = String.valueOf(properties.get("git.commit.message.full"));
-    this.commitMessageShort = String.valueOf(properties.get("git.commit.message.short"));
-    this.commitTime = String.valueOf(properties.get("git.commit.time"));
-    this.closestTagName = String.valueOf(properties.get("git.closest.tag.name"));
-    this.closestTagCommitCount = String.valueOf(properties.get("git.closest.tag.commit.count"));
+    this.commitId = properties.getProperty("git.commit.id.full"); // OR "git.commit.id"
+    // depending on configuration
+    this.commitIdAbbrev = properties.getProperty("git.commit.id.abbrev");
+    this.describe = properties.getProperty("git.commit.id.describe");
+    this.describeShort = properties.getProperty("git.commit.id.describe-short");
+    this.commitUserName = properties.getProperty("git.commit.user.name");
+    this.commitUserEmail = properties.getProperty("git.commit.user.email");
+    this.commitMessageFull = properties.getProperty("git.commit.message.full");
+    this.commitMessageShort = properties.getProperty("git.commit.message.short");
+    this.commitTime = properties.getProperty("git.commit.time");
+    this.closestTagName = properties.getProperty("git.closest.tag.name");
+    this.closestTagCommitCount = properties.getProperty("git.closest.tag.commit.count");
 
-    this.buildUserName = String.valueOf(properties.get("git.build.user.name"));
-    this.buildUserEmail = String.valueOf(properties.get("git.build.user.email"));
-    this.buildTime = String.valueOf(properties.get("git.build.time"));
-    this.buildHost = String.valueOf(properties.get("git.build.host"));
-    this.buildVersion = String.valueOf(properties.get("git.build.version"));
+    this.buildUserName = properties.getProperty("git.build.user.name");
+    this.buildUserEmail = properties.getProperty("git.build.user.email");
+    this.buildTime = properties.getProperty("git.build.time");
+    this.buildHost = properties.getProperty("git.build.host");
+    this.buildVersion = properties.getProperty("git.build.version");
   }
+
 
   public static GitRepositoryState getInstance() {
     if (instance == null) {
@@ -65,7 +68,14 @@ public class GitRepositoryState {
         if (cl == null) {
           cl = ClassLoader.getSystemClassLoader();
         }
-        properties.load(cl.getResourceAsStream("git.properties"));
+        java.io.InputStream in = cl.getResourceAsStream("git.properties");
+        if (in != null) {
+          try (java.io.InputStream autoClose = in) {
+            properties.load(autoClose);
+          }
+        } else {
+          AppLogger.warn("git.properties not found on classpath — git build info unavailable");
+        }
       } catch (Exception e) {
         AppLogger.warn("Failed to load git.properties");
       }
