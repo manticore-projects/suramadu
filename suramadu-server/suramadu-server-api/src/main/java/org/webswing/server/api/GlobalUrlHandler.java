@@ -161,7 +161,9 @@ public class GlobalUrlHandler extends PrimaryUrlHandler
 
   @Override
   protected WebswingSecurityConfig getSecurityConfig() {
-    log.info("Loading master security module.({}).", getConfig().getSecurity());
+    // Mask credentials before logging: the EMBEDDED module config carries plaintext
+    // passwords, which must never reach a log file.
+    log.info("Loading master security module.({}).", maskSecrets(getConfig().getSecurity()));
     WebswingSecurityConfig secConfig = super.getSecurityConfig();
     if (BuiltInModules.INHERITED.name().equals(secConfig.getModule())) {
       log.error(
@@ -244,6 +246,33 @@ public class GlobalUrlHandler extends PrimaryUrlHandler
       log.error("Failed send error response to client.");
     }
 
+  }
+
+  private static final java.util.regex.Pattern SENSITIVE_KEY =
+      java.util.regex.Pattern.compile("(?i)pass(word)?|pwd|secret|token|credential");
+
+  /**
+   * Returns a deep copy of the given config structure with every value whose key looks like a
+   * credential (password, secret, token, ...) replaced by "***". Maps and lists are traversed;
+   * everything else is returned as-is. Used to keep plaintext credentials out of log files.
+   */
+  private static Object maskSecrets(Object value) {
+    if (value instanceof Map<?, ?> map) {
+      Map<String, Object> masked = new LinkedHashMap<>();
+      for (Map.Entry<?, ?> e : map.entrySet()) {
+        String key = String.valueOf(e.getKey());
+        masked.put(key, SENSITIVE_KEY.matcher(key).find() ? "***" : maskSecrets(e.getValue()));
+      }
+      return masked;
+    }
+    if (value instanceof List<?> list) {
+      List<Object> masked = new ArrayList<>(list.size());
+      for (Object o : list) {
+        masked.add(maskSecrets(o));
+      }
+      return masked;
+    }
+    return value;
   }
 
   /**
@@ -393,7 +422,7 @@ public class GlobalUrlHandler extends PrimaryUrlHandler
       config.put("enabled", false);
       try {
         configService.setConfiguration(path, config); // first create with enabled:false to prevent
-                                                      // initiation
+        // initiation
         configService.setConfiguration(path, null); // once exists,
       } catch (Exception e) {
         log.error("Unable to Create App '{}'!", path, e);
