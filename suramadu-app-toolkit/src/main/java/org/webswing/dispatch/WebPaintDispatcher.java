@@ -11,6 +11,7 @@ import org.webswing.toolkit.extra.WebRepaintManager;
 import org.webswing.toolkit.extra.WindowManager;
 import org.webswing.toolkit.util.Util;
 import org.webswing.util.AppLogger;
+import org.webswing.util.BenchmarkStats;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
@@ -36,6 +37,10 @@ public class WebPaintDispatcher extends AbstractPaintDispatcher {
         Map<String, Map<Integer, BufferedImage>> windowImages = null;
         Map<String, Image> windowWebImages = null;
         Map<String, Set<Rectangle>> currentAreasToUpdate;
+        // benchmark instrumentation: extract phase = everything under treeLock + webPaintLock
+        // (the EDT-contention cost); encode phase = ZPNG/protobuf, off-lock. Zero overhead
+        // unless -Dwebswing.benchmarkStatsFile is set (see BenchmarkStats).
+        long tExtractStart = System.nanoTime();
         synchronized (Util.getWebToolkit().getTreeLock()) {
           synchronized (webPaintLock) {
 
@@ -60,6 +65,7 @@ public class WebPaintDispatcher extends AbstractPaintDispatcher {
             setClientNotReady();
           }
         }
+        long tEncodeStart = System.nanoTime();
         AppLogger.trace("contentSender:paintJson", frame);
         if (Util.isDD()) {
           AppLogger.trace("contentSender:pngWebImageEncodingStart", frame.hashCode());
@@ -74,6 +80,19 @@ public class WebPaintDispatcher extends AbstractPaintDispatcher {
         frame.setDirectDraw(Util.isDD());
         frame.setCompositingWM(Util.isCompositingWM());
         frame.setSendTimestamp("" + System.currentTimeMillis());
+
+        if (BenchmarkStats.isEnabled()) {
+          long encodeNanos = System.nanoTime() - tEncodeStart;
+          long extractNanos = tEncodeStart - tExtractStart;
+          long ddBytes = 0;
+          for (org.webswing.model.appframe.out.WindowMsgOut w : frame.getWindows()) {
+            if (w.getDirectDraw() != null) {
+              ddBytes += w.getDirectDraw().length;
+            }
+          }
+          BenchmarkStats.frame(frame.getSendTimestamp(), extractNanos, encodeNanos, ddBytes,
+              frame.getWindows().size());
+        }
 
         sendObject(msgOut, frame);
       } catch (Throwable e) {

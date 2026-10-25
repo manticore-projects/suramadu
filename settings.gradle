@@ -45,3 +45,4 @@ include 'suramadu-modpatch:modpatch-jdk-jsobject'
 
 // ── Assembly ─────────────────────────────────────────────────────────
 include 'suramadu-assembly'
+include 'suramadu-benchmark'

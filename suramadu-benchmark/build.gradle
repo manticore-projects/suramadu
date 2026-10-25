@@ -1,0 +1,9 @@
+dependencies {
+    // BenchmarkStats is resolved at runtime from the boot classpath toolkit JAR;
+    // compileOnly keeps it out of the benchmark JAR (no duplicate class).
+    compileOnly project(':suramadu-app-toolkit')
+}
+
+jar {
+    archiveBaseName = 'suramadu-benchmark'
+}

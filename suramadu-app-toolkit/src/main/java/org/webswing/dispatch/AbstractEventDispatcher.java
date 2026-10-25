@@ -10,6 +10,7 @@ import org.webswing.toolkit.extra.DndEventHandler;
 import org.webswing.toolkit.jslink.WebJSObject;
 import org.webswing.toolkit.util.Util;
 import org.webswing.util.AppLogger;
+import org.webswing.util.BenchmarkStats;
 import org.webswing.util.NamedThreadFactory;
 import sun.awt.UngrabEvent;
 
@@ -91,7 +92,14 @@ public abstract class AbstractEventDispatcher implements EventDispatcher {
         if (msgIn.getEvents() != null) {
           msgIn.getEvents().forEach(this::dispatchMessage);
         }
-        msgIn.getTimestamps();
+        // The client echoes the frame's sendTimestamp plus its own measured rendering time.
+        // This was previously read and DISCARDED; route it to the benchmark sink when enabled.
+        if (msgIn.getTimestamps() != null && BenchmarkStats.isEnabled()) {
+          for (org.webswing.model.common.in.TimestampsMsgIn ts : msgIn.getTimestamps()) {
+            BenchmarkStats.ack(ts.getSendTimestamp(), ts.getStartTimestamp(), ts.getRenderingTime(),
+                ts.getPing());
+          }
+        }
         if (frame != null) {
           if (frame.getJavaRequest() != null) {
             WebJSObject.evaluateJava(frame.getJavaRequest());
