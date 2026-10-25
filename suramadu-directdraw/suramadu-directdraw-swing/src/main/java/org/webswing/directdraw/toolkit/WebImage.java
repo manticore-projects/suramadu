@@ -234,7 +234,21 @@ public class WebImage extends Image {
 
   WebImageProto toMessageInternal(DirectDraw dd) {
     DrawConstantPool constantPool = dd.getConstantPool();
-    constantPool.resetCacheOverflowCounters();
+    // Nested images (DRAW_WEBIMAGE) are encoded recursively from instruction.toMessage(dd) below.
+    // Only the top-level frame may reset the overflow guard; see
+    // DrawConstantPool#resetCacheOverflowCounters for why a nested reset corrupts the stream.
+    boolean topLevel = constantPool.enterEncode();
+    try {
+      if (topLevel) {
+        constantPool.resetCacheOverflowCounters();
+      }
+      return encode(dd, constantPool);
+    } finally {
+      constantPool.exitEncode();
+    }
+  }
+
+  private WebImageProto encode(DirectDraw dd, DrawConstantPool constantPool) {
 
     WebImageProto.Builder webImageBuilder = WebImageProto.newBuilder();
 

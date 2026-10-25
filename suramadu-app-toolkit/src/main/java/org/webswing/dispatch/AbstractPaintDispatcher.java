@@ -51,6 +51,16 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
   private volatile FocusEventMsgOut focusEvent;
   private volatile AccessibilityMsgOut accessible;
   private final AtomicBoolean clientReadyToReceive = new AtomicBoolean(true);
+  /**
+   * Pending DirectDraw constant-cache reset. The cache (LRU + id allocator) is not thread-safe and
+   * is only ever used by the paint sender thread while it encodes a frame; resetting it from any
+   * other thread (event thread on a client "repaint" / screen-size handshake, recording start)
+   * could swap the pool in the middle of an encode, so one frame carried ids from two different
+   * pools - the client then resolved constants of the wrong type (null transform, wrong path).
+   * Resets are therefore only requested here and applied on the sender thread at the start of the
+   * next cycle, before extraction, under webPaintLock.
+   */
+  private final AtomicBoolean ddCacheResetRequested = new AtomicBoolean(false);
   private final Long ackTimeout = Long.getLong(Constants.PAINT_ACK_TIMEOUT, 5000);
   private long lastReadyStateTime;
   private JFileChooser fileChooserDialog;
@@ -152,7 +162,7 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
   public void notifyWindowRepaintAll() {
     notifyBackgroundAreaVisible(new Rectangle(Util.getWebToolkit().getScreenSize()));
     if (Util.isDD()) {
-      Services.getDirectDrawService().resetCache();
+      requestDirectDrawCacheReset("repaint all");
       Util.repaintAllWindow();
     } else {
       for (Window w : Util.getAllWindows()) {
@@ -576,14 +586,39 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
     Services.getConnectionService().sendObject(msgOut, frame);
   }
 
+  /**
+   * Requests a DirectDraw constant-cache reset; safe to call from any thread. The reset itself is
+   * performed by {@link #applyPendingDirectDrawCacheReset()} on the paint sender thread.
+   */
+  protected void requestDirectDrawCacheReset(String reason) {
+    if (Util.isDD() && !ddCacheResetRequested.getAndSet(true)) {
+      AppLogger.debug("paintDispatcher: DirectDraw constant cache reset requested (" + reason
+          + ", thread " + Thread.currentThread().getName() + "), applied on next paint cycle");
+    }
+  }
+
+  /** Sender thread only, caller holds webPaintLock, never during an encode. */
+  private void applyPendingDirectDrawCacheReset() {
+    if (ddCacheResetRequested.getAndSet(false)) {
+      Services.getDirectDrawService().resetCache();
+    }
+  }
+
   protected boolean isClientReadyToReceiveOrResetAfterTimedOut() {
     synchronized (webPaintLock) {
+      // Start of a sender cycle: the previous cycle's encode has finished and this cycle's
+      // extraction/encode has not started - the only point where a cache reset is safe.
+      applyPendingDirectDrawCacheReset();
       if (!clientReadyToReceive.get()) {
         if (System.currentTimeMillis() - lastReadyStateTime > ackTimeout) {
-          AppLogger.debug("paintDispatcher.clientReadyToReceive re-enabled after timeout");
-          if (Util.isDD()) {
-            Services.getDirectDrawService().resetCache();
-          }
+          AppLogger.warn("paintDispatcher.clientReadyToReceive re-enabled after timeout ("
+              + (System.currentTimeMillis() - lastReadyStateTime) + " ms without paint ack)");
+          // Deliberately NO DirectDraw cache reset here. A late ack on an open connection means a
+          // slow client, not a lost frame: the client still holds every constant it was sent.
+          // Resetting made the server re-send everything (all fonts, all constants - frames of
+          // several MB) to exactly the client that was already too slow, which pushed the next
+          // ack past the timeout again: a feedback loop that collapsed slow sessions to <1 fps.
+          // Genuine client-state loss (reconnect, reload) resets via notifyWindowRepaintAll().
           clientReadyToReceive();
           lastReadyStateTime = System.currentTimeMillis();
           return true;

@@ -113,5 +113,6 @@ module.exports = {
     "suramadu-selector": "./suramadu-selector.ts",
     "suramadu-security": "./suramadu-security.ts",
     "suramadu-embed": "./suramadu-embed.ts",
+    "suramadu-dd-worker": "./suramadu-dd-worker.ts",
   }
 };

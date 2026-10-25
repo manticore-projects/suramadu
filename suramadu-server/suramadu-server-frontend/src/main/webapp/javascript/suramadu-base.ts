@@ -2,6 +2,7 @@ import { appFrameProtoOut } from "./proto/proto.out";
 import { appFrameProtoIn } from "./proto/proto.in";
 import { commonProto } from "./proto/proto.common";
 import { DirectDraw as WebswingDirectDraw } from "suramadu-directdraw-javascript";
+import { DirectDrawWorkerClient } from "./suramadu-dd-client";
 import { getDpr, GUID, getImageString, getTimeZone, fixConnectionUrl } from './suramadu-util';
 import { ModuleDef, IInjected } from "./suramadu-inject";
 import { AppFrame } from "./suramadu-socket";
@@ -133,6 +134,7 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 	private internalFrameWrapperHolders: {[K: string]: HTMLElement} = {}; // <id> : <IFW element>
 	private closedWindows: {[K: string]: boolean} = {}; // <id> : <boolean>, map of windows requested to be closed, rendering of windows in this map will be ignored, until message about closed window is received
 	private directDraw?: WebswingDirectDraw;
+	private ddWorker: DirectDrawWorkerClient | null = null;
 	private compositingWM = false;
 	private audio: {[K: string]: IAudioClip} = {};
 	private focusedUndockedWindow: Window | null = null;
@@ -142,7 +144,7 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 	private startNewSessionOnShutdown = false;
 
 	public ready = () => {
-		this.directDraw = new WebswingDirectDraw({ logTrace: this.api.cfg.traceLog, logDebug: this.api.cfg.debugLog, ieVersion: this.api.cfg.ieVersion, dpr: getDpr() });
+		this.initDirectDraw();
 	};
 
 	public provides() {
@@ -251,11 +253,110 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 		this.windowImageHolders = {};
 		this.internalFrameWrapperHolders = {};
 		this.closedWindows = {};
+		this.initDirectDraw();
+		this.drawingQ = [];
+	}
+
+	/**
+	 * (Re)creates the DirectDraw pipeline: the main-thread interpreter (always, as fallback and
+	 * for the base64/playback path) plus, when the browser supports it, the render worker that
+	 * takes over protobuf decode + instruction replay (see suramadu-dd-worker.ts). Called from
+	 * ready() and resetState(), so worker lifetime == constant-pool lifetime on both threads.
+	 * Benchmark/debug kill switch: append ?ddWorker=false to the URL.
+	 */
+	private initDirectDraw() {
 		if (this.directDraw) {
 			this.directDraw.dispose();
 		}
 		this.directDraw = new WebswingDirectDraw({ logTrace: this.api.cfg.traceLog, logDebug: this.api.cfg.debugLog, ieVersion: this.api.cfg.ieVersion, dpr: getDpr() });
-		this.drawingQ = [];
+		if (this.ddWorker) {
+			this.ddWorker.dispose();
+			this.ddWorker = null;
+		}
+		if (this.isDirectDrawWorkerEnabled()) {
+			const workerUrl = fixConnectionUrl(this.api.cfg.connectionUrl) + 'javascript/suramadu-dd-worker.js';
+			this.ddWorker = new DirectDrawWorkerClient(workerUrl, { logDebug: this.api.cfg.debugLog, logTrace: this.api.cfg.traceLog, dpr: getDpr() }, (reason) => {
+				console.warn("DirectDraw worker disabled, rendering on the main thread: " + reason);
+				this.ddWorker = null;
+				// The worker owned the client-side constant pool; ask the server for a full
+				// repaint so the main-thread interpreter starts from a consistent frame.
+				this.repaint();
+			});
+		}
+	}
+
+	private ddWorkerMode(): string | null {
+		try {
+			return new URLSearchParams(window.location.search).get('ddWorker');
+		} catch (e) {
+			return null; // no URLSearchParams — ancient browser, the feature checks decide
+		}
+	}
+
+	private isDirectDrawWorkerEnabled(): boolean {
+		if (this.ddWorkerMode() !== 'true') {
+			return false;
+		}
+		const w = window as any;
+		return typeof Worker !== 'undefined' && w.OffscreenCanvas != null && typeof w.createImageBitmap === 'function';
+	}
+
+	/** Main-thread DirectDraw render (worker disabled or unavailable). */
+	private renderOnMain(win: appFrameProtoOut.IWindowMsgOutProto, wih?: HTMLCanvasElement): PromiseLike<HTMLCanvasElement> {
+		const dd = this.directDraw!;
+		if (typeof win.directDraw === 'string') {
+			return dd.draw64(win.directDraw, wih);
+		}
+		return dd.drawBin(win.directDraw!, wih);
+	}
+
+	private toDirectDrawBytes(dd: string | Uint8Array): Uint8Array {
+		if (typeof dd === 'string') {
+			return Uint8Array.from(atob(dd), (c) => c.charCodeAt(0));
+		}
+		return dd;
+	}
+
+	/**
+	 * Renders one window's DirectDraw frame in the worker and blits the resulting ImageBitmap
+	 * into the regular per-window canvas, which therefore keeps its full content on the main
+	 * thread — every existing consumer (dirty-rect blit to the root canvas, moveAction,
+	 * getPixels, undocking, mirror view, internal windows) is unaffected.
+	 */
+	private renderInWorker(winId: string, data: Uint8Array, wih?: HTMLCanvasElement): PromiseLike<HTMLCanvasElement> {
+		return this.ddWorker!.draw(winId, data).then((frame) => {
+			let canvas = wih;
+			if (canvas == null) {
+				canvas = document.createElement("canvas");
+				canvas.classList.add("suramadu-canvas");
+			}
+			if (canvas.width !== frame.width || canvas.height !== frame.height) {
+				canvas.width = frame.width;
+				canvas.height = frame.height;
+			}
+			canvas.style.width = (frame.width / getDpr()) + "px";
+			canvas.style.height = (frame.height / getDpr()) + "px";
+			const ctx = canvas.getContext("2d")!;
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			// 'copy' replaces the whole surface in one blit: no clearRect, and translucent
+			// window pixels are not composited over the previous frame's content
+			ctx.globalCompositeOperation = "copy";
+			ctx.drawImage(frame.bitmap, 0, 0);
+			ctx.globalCompositeOperation = "source-over";
+			frame.bitmap.close();
+			return canvas;
+		}, (err) => {
+			// Worker failed this frame; it has already marked itself failed and requested a
+			// full repaint. The main-thread interpreter CANNOT render this frame — its
+			// constant pool is empty (every constant was consumed by the worker and the
+			// server sends each one only once). So keep the window's current content and let
+			// the repaint rebuild state. A brand-new window with no canvas yet has nothing to
+			// keep, so the frame is dropped (rethrow) and the repaint will recreate it.
+			if (wih != null) {
+				return wih;
+			}
+			throw err;
+		});
 	}
 
 	public sendMessageEvent(message: commonProto.SimpleEventMsgInProto.SimpleEventTypeProto) {
@@ -312,6 +413,10 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 		document.removeEventListener("visibilitychange", this.visibilityChangeHandler);
 		if (this.directDraw) {
 			this.directDraw.dispose();
+		}
+		if (this.ddWorker) {
+			this.ddWorker.dispose();
+			this.ddWorker = null;
 		}
 
 		for (const id in this.audio) {
@@ -774,6 +879,9 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 	}
 
 	public closeWindowInternal(id:string) {
+		if (this.ddWorker) {
+			this.ddWorker.closeWindow(id);
+		}
 		const canvasWindow = this.windowImageHolders[id];
 
 		if (canvasWindow) {
@@ -922,12 +1030,13 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 			let ddPromise;
 			const wih = (this.windowImageHolders[win.id] && this.windowImageHolders[win.id] != null) ? this.windowImageHolders[win.id].element as HTMLCanvasElement : undefined;
 
-			if (this.directDraw) {
-				if (typeof win.directDraw === 'string') {
-					ddPromise = this.directDraw.draw64(win.directDraw, wih);
-				} else {
-					ddPromise = this.directDraw.drawBin(win.directDraw!, wih);
-				}
+			if (this.ddWorker != null && this.ddWorker.isUsable()) {
+				// All DirectDraw frames go to the worker, regardless of wire encoding: the
+				// draw-constant pool is cumulative and the server sends each constant only
+				// once, so main-thread and worker must never each own a partial pool.
+				ddPromise = this.renderInWorker(win.id, this.toDirectDrawBytes(win.directDraw!), wih);
+			} else if (this.directDraw) {
+				ddPromise = this.renderOnMain(win, wih);
 			}
 
 			if (ddPromise) {
@@ -979,10 +1088,10 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 				}
 
 				ddPromise = Promise.resolve(wih);
-			} else if (typeof win.directDraw === 'string' && this.directDraw) {
-				ddPromise = this.directDraw.draw64(win.directDraw, wih);
+			} else if (this.ddWorker != null && this.ddWorker.isUsable()) {
+				ddPromise = this.renderInWorker(win.id, this.toDirectDrawBytes(win.directDraw), wih);
 			} else if (this.directDraw) {
-				ddPromise = this.directDraw.drawBin(win.directDraw, wih);
+				ddPromise = this.renderOnMain(win, wih);
 			}
 
 			if (ddPromise) {

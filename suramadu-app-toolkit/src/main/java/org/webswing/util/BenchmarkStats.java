@@ -4,7 +4,6 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.charset.Charset;
 
 /**
  * Lightweight per-frame CSV sink for DirectDraw pipeline benchmarking.
@@ -12,6 +11,12 @@ import java.nio.charset.Charset;
  * <p>
  * Disabled unless {@code -Dwebswing.benchmarkStatsFile=<path>} is set on the application JVM — zero
  * overhead in production (one static null check per call site).
+ *
+ * <p>
+ * Every application process writes its OWN file: the process id is inserted before the extension
+ * ({@code logs/benchmark.csv} becomes {@code logs/benchmark-12345.csv}). Each browser session runs
+ * its own application process, so a second open benchmark window would otherwise truncate and
+ * interleave the same CSV. The actual file name is logged at startup.
  *
  * <p>
  * Row types (first column):
@@ -43,9 +48,9 @@ public final class BenchmarkStats {
     if (file == null || file.isBlank()) {
       return null;
     }
+    file = withPid(file);
     try {
-      PrintWriter w = new PrintWriter(
-          new BufferedWriter(new FileWriter(file, Charset.defaultCharset(), false)));
+      PrintWriter w = new PrintWriter(new BufferedWriter(new FileWriter(file, false)));
       w.println("type,t1,t2,t3,t4,t5,t6");
       w.flush();
       AppLogger.info("BenchmarkStats enabled, writing to " + file);
@@ -54,6 +59,17 @@ public final class BenchmarkStats {
       AppLogger.error("BenchmarkStats: failed to open " + file + ", stats disabled", e);
       return null;
     }
+  }
+
+  /** {@code dir/name.ext} becomes {@code dir/name-<pid>.ext}; no extension: {@code name-<pid>}. */
+  static String withPid(String file) {
+    String pid = Long.toString(ProcessHandle.current().pid());
+    int slash = Math.max(file.lastIndexOf('/'), file.lastIndexOf('\\'));
+    int dot = file.lastIndexOf('.');
+    if (dot > slash + 1) {
+      return file.substring(0, dot) + "-" + pid + file.substring(dot);
+    }
+    return file + "-" + pid;
   }
 
   public static boolean isEnabled() {

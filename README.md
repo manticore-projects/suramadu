@@ -1,11 +1,11 @@
 <div align="center">
 
-# Suramadu 27.0
+# Suramadu 27.1
 
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
-[![Version](https://img.shields.io/badge/Version-27.0-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
+[![Version](https://img.shields.io/badge/Version-27.1-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
 [![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2027-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
@@ -45,6 +45,20 @@ The complete corresponding source for every released version is in this reposito
 ---
 
 ## What's New
+
+### Rendering Reliability (27.1)
+
+- **No more UI corruption on slow connections.** On a slow or congested link, the browser could
+  draw parts of the UI with the wrong colours, shapes or text. Cause: the server's DirectDraw
+  constant cache recycled ids *within* a single large frame, while the browser applies a frame's
+  constants in a different order than the server allocated them. The cache now never evicts an
+  entry used in the current frame and grows instead (`LRUDrawConstantPoolCache`).
+- **Slow sessions no longer collapse.** After 5 s without a paint acknowledgement the server used
+  to reset its cache and re-send everything, fonts included, to exactly the client that was
+  already too slow: a feedback loop down to under 1 frame per second. The timeout now resumes
+  sending without a reset.
+- **Cache reset race fixed.** A browser resize, reconnect or recording start could reset the
+  cache while a frame was being encoded. Resets now happen only between frames.
 
 ### JDK Compatibility
 
@@ -114,6 +128,11 @@ Try the [Online JSQLFormatter running on Suramadu](http://jsqlformatter.manticor
 - **SSE/AVX-optimized PNG encoding** via [zpng-java](https://manticore-projects.com/FPNG-Java/index.html) — hardware-accelerated image compression in the DirectDraw rendering pipeline
 - **Browser-side font rendering** — text is rendered as font names + coordinates instead of server-side glyph bitmaps, reducing WebSocket bandwidth by up to 80%
 - **GZIP/Brotli pre-compression** for all static assets (reducing the JS size from 5 MB to less than 1 MB), GZIP compression for all content (JSON)
+- **Faster text drawing** *(27.1)* — runs of characters are drawn with one `fillText` call instead of one per character, with cached text measurements; per-character fallback only where browser and server metrics disagree. Text-heavy redraws render about twice as fast (benchmark: 17 → 9 ms median, 95th percentile 30 → 13 ms)
+- **Faster image decoding** *(27.1)* — images are decoded with `createImageBitmap` straight from the binary data, off the main thread, instead of building base64 data URLs
+- **Less work on the Swing event thread** *(27.1)* — PNG encoding of images happens lazily on the sender thread instead of while painting; image identity is hashed directly from the raster; fewer allocations per encoded frame
+- **Built-in DirectDraw benchmark** *(27.1)* — a self-driving Swing application (`/benchmark`: table scrolling, icons, vector graphics, image flood), per-frame server and client timings written to CSV (`-Dwebswing.benchmarkStatsFile`), an analyzer and a reproducible browser launcher. See [the benchmark README](suramadu-benchmark/src/main/resources/org/webswing/benchmark/README.md)
+- **Experimental Web Worker rendering** *(27.1, off by default)* — see [the dedicated section](#experimental-directdraw-rendering-in-a-web-worker-off-by-default) for measurements and why it stays disabled
 
 ### Security
 
@@ -147,9 +166,9 @@ The fork is hardened for the deployments it was built for.
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.0.0.zip
-unzip suramadu-27.0.0.zip
-cd suramadu-27.0.0
+curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.1.0.zip
+unzip suramadu-27.1.0.zip
+cd suramadu-27.1.0
 
 # Start the server
 ./run.sh start
@@ -200,7 +219,7 @@ cd suramadu
 
 ```bash
 # Extract to your deployment directory
-unzip build/dist/suramadu-27.0.0.zip -d /opt/suramadu
+unzip build/dist/suramadu-27.1.0.zip -d /opt/suramadu
 
 # Configure your Swing application
 vim /opt/suramadu/suramadu.config
@@ -273,6 +292,112 @@ Suramadu is not affiliated with, endorsed by, or supported by Webswing Limited o
 ## License
 
 This project is licensed under the [GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.en.html).
+
+---
+
+## Experimental: DirectDraw rendering in a Web Worker (off by default)
+
+Suramadu contains an optional render path that moves DirectDraw decoding and canvas replay off
+the browser's main thread into a dedicated Web Worker with an `OffscreenCanvas`. It is
+**disabled by default** and should stay that way until the findings below change. This section
+records what was measured, what was ruled out, and why it is switched off, so the next attempt
+does not start from zero.
+
+### How it works
+
+The worker owns the DirectDraw interpreter, the cumulative constant pool and one `OffscreenCanvas`
+per Swing window. Each frame is replayed in the worker and handed back as a transferred
+`ImageBitmap`, which the main thread blits into the regular window canvas. Everything that reads
+window pixels on the main thread (dirty-rect blits, `moveAction`, `getPixels`, undocking, mirror
+view) is unaffected.
+
+| | |
+|---|---|
+| Enable | append `?ddWorker=true` to the application URL |
+| Benchmark | `bench-browser.fish chromium\|firefox 1600 1000 worker` |
+| Code | `suramadu-dd-worker.ts`, `suramadu-dd-client.ts`, routing in `suramadu-base.ts` (`initDirectDraw`, `renderInWorker`) |
+| Fallback | any worker failure switches the session to main-thread rendering |
+
+Implementation constraints that took effort to find and must be kept:
+
+- **One constant pool.** The server sends every draw constant exactly once. All DirectDraw frames,
+  base64 and binary alike, must go to the same interpreter; splitting them between main thread
+  and worker corrupts rendering.
+- **Copy frame bytes at call time.** `win.directDraw` is a view into the WebSocket buffer; a
+  deferred copy can capture a later frame.
+- **Serial rendering.** The interpreter is not re-entrant; the worker processes one frame at a time.
+- **Start the worker from a Blob URL.** The page CSP allows `worker-src blob:` only.
+
+### Results (October 2026, Linux/X11, AMD RX 570, Mesa 26.2)
+
+Benchmark application `/benchmark`, same window and geometry for every run (controls VECTOR and
+IMAGE_FLOOD identical in bytes per frame):
+
+| | Chromium main thread | Chromium worker | Firefox 158 main thread | Firefox 158 worker |
+|---|---|---|---|---|
+| TEXT_TABLE fps | 18.5 | 19.5 | **27.2** | 0.4 (collapse) |
+| TEXT render p50 per KB | 0.53 ms | 0.54 ms | **0.25 ms** | n/a |
+| ICON_TABLE fps | 27.3 | 26.8 | 27.8 | 0.3 (collapse) |
+| ICON render p95 | 23 ms | 31 ms | 14 ms | n/a |
+
+Firefox worker figures were measured before the ack-timeout fix below; with the fix the session
+no longer collapses completely, but it still stalls repeatedly and stays far behind the main thread.
+
+- **Chromium:** no measurable gain. The work moves to another thread but costs the same per KB;
+  tails are equal or slightly worse (extra bitmap round trip).
+- **Firefox:** the worker is CPU-bound. A profile showed the worker thread **97.8 % busy** in
+  software rasterization (`fill`, `fillText`, `drawImage`, plus large `memcpy`), while Firefox's
+  accelerated canvas thread (`CanvasRenderer`) sat at **0.6 %**. On the main thread Firefox uses
+  accelerated Canvas2D and is the fastest browser; inside the worker the same canvas work runs in
+  software, several times slower.
+
+`about:support` reports *Accelerated Canvas2D: available* and `gfx.canvas.remote.allow-offscreen`
+is `true`, yet the worker's canvas was not accelerated. Ruled out by experiment, each without
+effect:
+
+- `gfx.canvas.accelerated.min-size = 1` (our canvases are created at 1×1 before resizing)
+- `gfx.canvas.accelerated.profile-fallback-ratio = 1.0` and `profile-cache-miss-ratio = 1.0`
+  (Firefox's per-canvas demotion heuristic)
+- font loading in the worker (0.6 % of worker time in the profile)
+
+Why Firefox renders a worker `OffscreenCanvas` in software in this configuration is **not
+known**. The machine has no Firefox GPU process (`FEATURE_FAILURE_NO_GPU_PROCESS`), which may be
+related; no documentation was found that confirms it.
+
+### Why it is off
+
+1. No gain in Chromium.
+2. In Firefox it trades GPU rendering for software rendering: strictly worse.
+3. The only remaining argument for it, a free main thread for input during heavy redraws, has not
+   been measured; the benchmark scrolls server-side without user input.
+
+### Fixed while investigating (apply to every session, worker or not)
+
+The worker made the client slower, and that exposed three server-side bugs that also hit real
+users on slow connections:
+
+- **Constant-id recycling inside a frame** (`LRUDrawConstantPoolCache`, `DrawConstantPool`,
+  `WebImage`): nested `DRAW_WEBIMAGE` encodes reset the per-frame overflow guard, so large
+  accumulated frames recycled constant ids mid-frame. The browser applies a frame's outer
+  constants first and nested ones lazily, so ids resolved to the wrong constant: the UI
+  corruption seen on slow connections. Fixed with a per-frame stamp on cache entries: an entry
+  used in the current frame is never evicted; the cache grows instead.
+- **Ack-timeout cache reset** (`AbstractPaintDispatcher`): after 5 s without a paint ack the
+  server reset its constant cache and re-sent everything (fonts included, frames of several MB)
+  to the client that was already too slow, a feedback loop that collapsed slow sessions to under
+  1 fps. The timeout now re-enables sending without a reset.
+- **Cache reset race** (`AbstractPaintDispatcher`): a client `repaint`, resize handshake or
+  recording start reset the cache on the event thread, possibly in the middle of an encode on the
+  sender thread. Resets are now deferred to the start of the next sender cycle.
+
+### Revisiting
+
+Worth another look when a browser accelerates `OffscreenCanvas` in workers on the target
+platform, or when input latency during heavy redraws becomes a measured problem. Verify first
+with a Firefox Profiler capture including the *DOM Worker* threads: the `CanvasRenderer` thread
+must be busy and the worker must not spend its time in raster code. Then compare
+`?ddWorker=true` against the default with `bench-browser.fish`, alternating runs in the same
+window, and accept the worker only if it wins in both browsers.
 
 ---
 

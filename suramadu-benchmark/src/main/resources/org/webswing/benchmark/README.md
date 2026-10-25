@@ -16,7 +16,7 @@
     "jreExecutable" : "${java.home}/bin/java",
     "javaVersion" : "${java.version}",
     "classPathEntries" : [ "${webswing.rootDir}/dist/benchmark-lib/*" ],
-    "vmArgs": "-Xmx512m -Dwebswing.benchmarkStatsFile=${webswing.rootDir}/logs/benchmark.csv -Dbenchmark.sceneSeconds=30",
+    "vmArgs": "-Xmx512m -Dwebswing.benchmarkStatsFile=${webswing.rootDir}/logs/benchmark.csv -Dbenchmark.sceneSeconds=30 -Dwebswing.ddConstCacheSize=262144",
     "fontConfig" : {
       "monospace" : "${webswing.rootDir}/fonts/RobotoMono-Regular.ttf",
       "DejaVu Sans Mono" : "${webswing.rootDir}/fonts/DejaVuSansMono.ttf",

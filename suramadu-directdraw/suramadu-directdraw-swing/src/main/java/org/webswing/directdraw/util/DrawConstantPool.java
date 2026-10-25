@@ -20,8 +20,12 @@ public class DrawConstantPool {
   private final LRUDrawConstantPoolCache imgPool;
   private final Set<String> registeredFonts = new HashSet<String>();
   private final Map<String, FontFaceConst> requestedFonts = new HashMap<String, FontFaceConst>();
-  private int poolOverflowCounter;
-  private int imgPoolOverflowCounter;
+  /**
+   * Nesting depth of WebImage encoding. A top-level window frame may contain nested WebImages
+   * (DRAW_WEBIMAGE, e.g. Swing's back buffer blitted into the window), which are encoded
+   * recursively into the same pool while the outer frame is being built.
+   */
+  private int encodeDepth;
 
   public DrawConstantPool() {
     pool = new LRUDrawConstantPoolCache(CONSTANT_CACHE_SIZE, 0, CONSTANT_CACHE_SIZE_MAX);
@@ -29,24 +33,46 @@ public class DrawConstantPool {
         CONSTANT_CACHE_SIZE_MAX);
   }
 
+  /**
+   * Marks the start of encoding one WebImage.
+   *
+   * @return true for the outermost (top-level frame) encode, false for a nested image
+   */
+  public boolean enterEncode() {
+    return encodeDepth++ == 0;
+  }
+
+  public void exitEncode() {
+    encodeDepth--;
+  }
+
+  /**
+   * Starts a new frame for the eviction guard. Must be called once per TOP-LEVEL frame only: the
+   * caches never evict an entry used in the current frame (they grow instead), so no id is recycled
+   * within one frame. (Formerly a call counter, which also counted cache hits and so hit the hard
+   * limit on large frames full of repeated constants.) The client applies a frame's outer constants
+   * up front but nested-image constants lazily, i.e. in a different order than the server allocated
+   * them, so an id recycled within one frame resolves to the wrong constant on the client.
+   * Resetting the counters for every nested image disabled the guard for frames with many nested
+   * images (slow clients accumulate hundreds of back-buffer blits per frame) - the cause of the
+   * DirectDraw corruption on slow connections.
+   */
   public void resetCacheOverflowCounters() {
-    poolOverflowCounter = 0;
-    imgPoolOverflowCounter = 0;
+    pool.startFrame();
+    imgPool.startFrame();
   }
 
   public int addToCache(List<DrawConstantProto> protos, DrawConstant<?> cons) {
     if (cons instanceof ImageConst) {
-      return addToCache(imgPool, protos, cons, imgPoolOverflowCounter++);
+      return addToCache(imgPool, protos, cons);
     } else {
-      return addToCache(pool, protos, cons, poolOverflowCounter++);
+      return addToCache(pool, protos, cons);
     }
   }
 
   private int addToCache(LRUDrawConstantPoolCache cache, List<DrawConstantProto> protos,
-      DrawConstant<?> cons, int overflowCounter) {
-    if (overflowCounter >= cache.getCapacity()) {
-      cache.increaseCapacity();
-    }
+      DrawConstant<?> cons) {
+    // capacity growth is decided by the cache itself (never evicts an entry used in this frame)
     int thisId;
     if (!cache.contains(cons)) {
       DrawConstant<?> cacheEntry = cons.toCacheEntry();

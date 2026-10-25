@@ -186,7 +186,7 @@ export class DirectDraw {
         for (let i = 0, l = bytes.byteLength; i < l; i++) {
             binary += String.fromCharCode(bytes[i]);
         }
-        return window.btoa(binary);
+        return btoa(binary); // global in both Window and WorkerGlobalScope
     }
 
     public static getImageData(data: Uint8Array) {
@@ -239,6 +239,28 @@ export class DirectDraw {
      public static toCanvasCtx(ctx2d:ICanvasCtx):ICanvasCtx{
         return ctx2d as ICanvasCtx;
      }
+
+    /**
+     * Environment-agnostic canvas factory: an HTMLCanvasElement on the main thread, an
+     * OffscreenCanvas inside a Web Worker (no DOM). Both expose width/height/getContext("2d"),
+     * which is all the interpreter uses; the OffscreenCanvas is cast so the rest of the file
+     * stays on one type. DOM-only members (style, classList) are guarded at their use sites.
+     */
+    public static newCanvas(width?: number, height?: number): HTMLCanvasElement {
+        let c: HTMLCanvasElement;
+        if (typeof document !== "undefined") {
+            c = document.createElement("canvas");
+        } else {
+            c = new OffscreenCanvas(width !== undefined ? width : 1, height !== undefined ? height : 1) as unknown as HTMLCanvasElement;
+        }
+        if (width !== undefined) {
+            c.width = width;
+        }
+        if (height !== undefined) {
+            c.height = height;
+        }
+        return c;
+    }
     private ctxId = Math.floor(Math.random() * 0x10000).toString(16)
 
     private config: IDirectDrawConfig = {
@@ -252,7 +274,7 @@ export class DirectDraw {
     private constantPoolCache: IDrawConstantProto[] = [];
     private fontsArray: string[] = [];
     private canvasBuffer:HTMLCanvasElement[] = [];
-    private xorLayer:HTMLCanvasElement=document.createElement("canvas");
+    private xorLayer:HTMLCanvasElement=DirectDraw.newCanvas();
 
     constructor(c?: IDirectDrawOptions) {
         if (c) {
@@ -450,7 +472,7 @@ export class DirectDraw {
             ctx.clip(DirectDraw.fillRule(clip));
         }
         if (glyphs.length > 0) {
-            const buffer = document.createElement("canvas");
+            const buffer = DirectDraw.newCanvas();
             buffer.width = size.points![2];
             buffer.height = size.points![3];
             const bufctx = buffer.getContext("2d")!;
@@ -473,6 +495,17 @@ export class DirectDraw {
     /** measureText results per (font, text). Static: widths depend only on the font string. */
     private static measureCache: Map<string, number> = new Map();
     private static readonly MEASURE_CACHE_MAX = 20000;
+
+    /**
+     * Drop all cached measureText widths. Must be called whenever a new FontFace becomes
+     * available: a string measured BEFORE its font finished loading was measured with the
+     * fallback font, and a poisoned entry would otherwise disagree with the server's
+     * advances forever, degrading iprtDrawString to the per-glyph scale path (slow, and
+     * visibly blurry because every glyph is drawn through a scale transform).
+     */
+    public static clearMeasureCache() {
+        DirectDraw.measureCache.clear();
+    }
     /** Max cumulative divergence (px) between server advances and browser text before realigning. */
     private static readonly ADVANCE_DRIFT_TOLERANCE = 0.5;
 
@@ -678,7 +711,7 @@ export class DirectDraw {
             if (anchor.x === 0 && anchor.y === 0 && anchor.w === preloadedImage.width && anchor.h === preloadedImage.height) {
                 ptrn = ctx.createPattern(preloadedImage, 'repeat');
             } else {
-                const ptrnCanvas = document.createElement('canvas');
+                const ptrnCanvas = DirectDraw.newCanvas();
                 const ax = anchor.x < 0 ? ((anchor.x % anchor.w) + anchor.w) : (anchor.x % anchor.w);
                 const ay = anchor.y < 0 ? ((anchor.y % anchor.h) + anchor.h) : (anchor.y % anchor.h);
                 ptrnCanvas.width = anchor.w;
@@ -1041,7 +1074,7 @@ export class DirectDraw {
     private prepareImage(image: DecodedProtoImage): Promise<void> {
         const data = image.data as Uint8Array;
         if (data == null || data.byteLength === 0 || !(data instanceof Uint8Array)) {
-            image.data = new Image();
+            image.data = typeof Image !== "undefined" ? new Image() : (DirectDraw.newCanvas(1, 1) as unknown as HTMLImageElement);
             return Promise.resolve();
         }
         if (typeof createImageBitmap === "function") {
@@ -1049,7 +1082,7 @@ export class DirectDraw {
                 .then((bitmap) => {
                     image.data = bitmap;
                 })
-                .catch(() => this.prepareImageLegacy(image, data));
+                .catch(() => typeof Image !== "undefined" ? this.prepareImageLegacy(image, data) : Promise.resolve());
         }
         return this.prepareImageLegacy(image, data);
     }
@@ -1072,6 +1105,12 @@ export class DirectDraw {
     }
 
     public initializeFontFaces(fontFaces: IFontFaceProto[]) {
+        if (typeof document === "undefined") {
+            // Worker: no DOM to inject @font-face CSS into — register through the
+            // FontFaceSet of the worker global scope instead (self.fonts). Same
+            // ctxId-prefixed family name as the DOM path, so iprtSetFont resolves it.
+            return this.initializeFontFacesWorker(fontFaces);
+        }
         return new Promise<void>((resolve, reject) => {
             try {
                 if (fontFaces.length > 0) {
@@ -1091,7 +1130,10 @@ export class DirectDraw {
                             }
                         });
                     });
-                    Promise.all(loadedFonts).then(() => resolve());
+                    Promise.all(loadedFonts).then(() => {
+                        DirectDraw.clearMeasureCache();
+                        resolve();
+                    });
                 } else {
                     resolve();
                 }
@@ -1102,7 +1144,42 @@ export class DirectDraw {
         });
     }
 
+    private initializeFontFacesWorker(fontFaces: IFontFaceProto[]): Promise<void> {
+        const loading: Array<Promise<void>> = [];
+        for (const fontFace of fontFaces) {
+            if (this.fontsArray.indexOf(fontFace.name) >= 0) {
+                continue;
+            }
+            this.fontsArray.push(fontFace.name);
+            try {
+                const fontName = this.ctxId + fontFace.name;
+                // slice() both narrows a subarray view to its exact range and detaches the
+                // font bytes from the (potentially transferred) protobuf buffer.
+                const source = (fontFace.font as Uint8Array).slice().buffer;
+                const descriptors = fontFace.style != null && fontFace.style !== "" ? { style: fontFace.style } : undefined;
+                const face = new FontFace(fontName, source, descriptors);
+                // tslint:disable-next-line:no-any
+                (self as any).fonts.add(face);
+                loading.push(face.load().then(() => undefined, (e: Error) => this.config.onErrorMessage(e)));
+            } catch (e) {
+                this.config.onErrorMessage(e as Error);
+            }
+        }
+        if (loading.length === 0) {
+            return Promise.resolve();
+        }
+        return Promise.all(loading).then(() => {
+            DirectDraw.clearMeasureCache();
+        });
+    }
+
     public dispose() {
+        if (typeof document === "undefined") {
+            // Worker: fonts live in self.fonts; the worker is terminated on reset,
+            // so there is nothing to unregister here.
+            this.fontsArray = [];
+            return;
+        }
         const styles = Array.from(document.body.getElementsByTagName("style"));
         const toRemove = [];
         for (const style of styles) {
@@ -1161,7 +1238,7 @@ export class DirectDraw {
             if (targetCanvas.width !== image.width * dpr || targetCanvas.height !== image.height * dpr) {
                 let buffer = this.canvasBuffer.pop();
                 if(buffer === undefined){
-                    buffer = document.createElement("canvas");
+                    buffer = DirectDraw.newCanvas();
                 }
                 buffer.width = targetCanvas.width;
                 buffer.height = targetCanvas.height;
@@ -1176,14 +1253,18 @@ export class DirectDraw {
             }
             newCanvas = targetCanvas;
         } else {
-            newCanvas = document.createElement("canvas");
-            newCanvas.classList.add("suramadu-canvas");
+            newCanvas = DirectDraw.newCanvas();
+            if (newCanvas.classList) {
+                newCanvas.classList.add("suramadu-canvas");
+            }
             newCanvas.getContext("2d")!.scale(dpr, dpr);
             newCanvas.width = image.width * dpr;
             newCanvas.height = image.height * dpr;
         }
-        newCanvas.style.width = image.width+"px";
-        newCanvas.style.height = image.height+"px";
+        if (newCanvas.style) { // OffscreenCanvas (worker) has no style; CSS size is applied by the main thread on blit
+            newCanvas.style.width = image.width+"px";
+            newCanvas.style.height = image.height+"px";
+        }
 
 
         const imageContext: IImageContext = {
