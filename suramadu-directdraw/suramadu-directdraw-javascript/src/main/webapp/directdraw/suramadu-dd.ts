@@ -1318,7 +1318,15 @@ export class DirectDraw {
         return graphicsState != null && graphicsState.compositeArgs != null && graphicsState.compositeArgs[0].composite!.type === CompositeTypeProto.XOR_MODE;
     }
 
+    private static xorWarned = false;
+
     private initXorModeCtx(graphicsState: IGraphicsState, original: ICanvasCtx) {
+        if (!DirectDraw.xorWarned) {
+            DirectDraw.xorWarned = true;
+            console.warn("DirectDraw: XOR paint mode active - this path uses getImageData "
+                + "(GPU readback) per affected instruction and is slow. Check the Swing "
+                + "application for XOR painting (e.g. Graphics.setXORMode rubber-banding).");
+        }
         this.xorLayer.width = original.canvas.width;
         this.xorLayer.height = original.canvas.height;
         const ctx = DirectDraw.toCanvasCtx(this.xorLayer.getContext("2d")!);
