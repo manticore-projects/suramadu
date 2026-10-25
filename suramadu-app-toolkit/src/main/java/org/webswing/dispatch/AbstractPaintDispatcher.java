@@ -63,6 +63,14 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
   private final AtomicBoolean ddCacheResetRequested = new AtomicBoolean(false);
   private final Long ackTimeout = Long.getLong(Constants.PAINT_ACK_TIMEOUT, 5000);
   private long lastReadyStateTime;
+  /**
+   * Start of the current ack stall (0 = acks arriving normally). A client that stops acking - most
+   * often a hidden/background browser tab, which the browser throttles - trips the ack timeout
+   * every few seconds for as long as it stays away; only the first timeout of a stall is logged,
+   * plus one line when the client is ready again. Guarded by webPaintLock.
+   */
+  private long ackStallSince;
+  private boolean reenablingAfterAckTimeout;
   private JFileChooser fileChooserDialog;
   private JDialog clipboardDialog;
   private ScheduledExecutorService executorService;
@@ -112,6 +120,11 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
 
   public void clientReadyToReceive() {
     synchronized (webPaintLock) {
+      if (ackStallSince != 0 && !reenablingAfterAckTimeout) {
+        AppLogger.info("paintDispatcher: client ready again after "
+            + (System.currentTimeMillis() - ackStallSince) / 1000 + " s without paint ack");
+        ackStallSince = 0;
+      }
       clientReadyToReceive.set(true);
     }
   }
@@ -611,15 +624,28 @@ public abstract class AbstractPaintDispatcher implements PaintDispatcher {
       applyPendingDirectDrawCacheReset();
       if (!clientReadyToReceive.get()) {
         if (System.currentTimeMillis() - lastReadyStateTime > ackTimeout) {
-          AppLogger.warn("paintDispatcher.clientReadyToReceive re-enabled after timeout ("
-              + (System.currentTimeMillis() - lastReadyStateTime) + " ms without paint ack)");
+          if (ackStallSince == 0) {
+            ackStallSince = lastReadyStateTime;
+            AppLogger.warn("paintDispatcher.clientReadyToReceive re-enabled after timeout ("
+                + (System.currentTimeMillis() - lastReadyStateTime) + " ms without paint ack);"
+                + " further timeouts are logged at debug level until the client acks again"
+                + " (typical cause: browser tab hidden or in the background)");
+          } else {
+            AppLogger.debug("paintDispatcher.clientReadyToReceive re-enabled after timeout ("
+                + (System.currentTimeMillis() - ackStallSince) / 1000 + " s since last paint ack)");
+          }
           // Deliberately NO DirectDraw cache reset here. A late ack on an open connection means a
           // slow client, not a lost frame: the client still holds every constant it was sent.
           // Resetting made the server re-send everything (all fonts, all constants - frames of
           // several MB) to exactly the client that was already too slow, which pushed the next
           // ack past the timeout again: a feedback loop that collapsed slow sessions to <1 fps.
           // Genuine client-state loss (reconnect, reload) resets via notifyWindowRepaintAll().
-          clientReadyToReceive();
+          reenablingAfterAckTimeout = true;
+          try {
+            clientReadyToReceive();
+          } finally {
+            reenablingAfterAckTimeout = false;
+          }
           lastReadyStateTime = System.currentTimeMillis();
           return true;
         }

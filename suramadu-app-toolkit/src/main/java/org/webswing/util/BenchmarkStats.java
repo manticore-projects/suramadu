@@ -4,6 +4,7 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Lightweight per-frame CSV sink for DirectDraw pipeline benchmarking.
@@ -50,7 +51,7 @@ public final class BenchmarkStats {
     }
     file = withPid(file);
     try {
-      PrintWriter w = new PrintWriter(new BufferedWriter(new FileWriter(file, false)));
+      PrintWriter w = new PrintWriter(new BufferedWriter(new FileWriter(file, StandardCharsets.UTF_8, false)));
       w.println("type,t1,t2,t3,t4,t5,t6");
       w.flush();
       AppLogger.info("BenchmarkStats enabled, writing to " + file);
