@@ -470,6 +470,38 @@ export class DirectDraw {
         ctx.restore();
     }
 
+    /** measureText results per (font, text). Static: widths depend only on the font string. */
+    private static measureCache: Map<string, number> = new Map();
+    private static readonly MEASURE_CACHE_MAX = 20000;
+    /** Max cumulative divergence (px) between server advances and browser text before realigning. */
+    private static readonly ADVANCE_DRIFT_TOLERANCE = 0.5;
+
+    private measuredWidth(ctx: ICanvasCtx, text: string): number {
+        const key = ctx.font + "\u0000" + text;
+        let w = DirectDraw.measureCache.get(key);
+        if (w === undefined) {
+            w = ctx.measureText(text).width;
+            if (DirectDraw.measureCache.size >= DirectDraw.MEASURE_CACHE_MAX) {
+                DirectDraw.measureCache.clear();
+            }
+            DirectDraw.measureCache.set(key, w);
+        }
+        return w;
+    }
+
+    /**
+     * Draws a string, honouring the server-side per-character advances (points[i+2]) so browser
+     * text lines up with Java's metrics.
+     *
+     * Previously this measured and drew EVERY character group individually —
+     * measureText + save + scale + fillText + restore per char — which profiling showed to
+     * dominate the whole client frame (measureText alone ~23% of page time on a text table).
+     * Since the deployed fonts are the same TTFs the server measures with, browser widths track
+     * the server advances almost exactly; consecutive groups are therefore BATCHED into a single
+     * fillText for as long as the cumulative divergence stays below ADVANCE_DRIFT_TOLERANCE.
+     * Per-char scaling remains only for groups where the metrics genuinely differ, and
+     * measureText results are cached per (font, text).
+     */
     public iprtDrawString(ctx:ICanvasCtx, args:IDrawConstantProto[], fontTransform:ITransformProto|null) {
         const value = args[0].string!;
         const points = args[1].points!.points!;
@@ -486,22 +518,44 @@ export class DirectDraw {
             ctx.fillText(value, 0, 0);
         } else {
             let currentX=x;
+            let run = "";
+            let runX = x;
+            let drift = 0;
             for (let i = 0;i<value.length;i++){
                 if(points[i+2]===0){
                     continue;
                 }
                 const c = this.getCharGroup(i,value,points);
-                const canvasWidth = ctx.measureText(c).width;
-                const scaleX = points[i+2] / canvasWidth;
-                ctx.save();
-                if(scaleX<=1) {
-                    ctx.scale(scaleX, 1);
-                    ctx.fillText(c, currentX / scaleX, y);
-                }else{
-                    ctx.fillText(c, currentX+((points[i+2] - canvasWidth)/2), y);
+                const advance = points[i+2];
+                const canvasWidth = this.measuredWidth(ctx, c);
+                const d = advance - canvasWidth;
+                if (Math.abs(drift + d) <= DirectDraw.ADVANCE_DRIFT_TOLERANCE) {
+                    if (run === "") {
+                        runX = currentX;
+                        drift = 0;
+                    }
+                    run += c;
+                    drift += d;
+                } else {
+                    if (run !== "") {
+                        ctx.fillText(run, runX, y);
+                        run = "";
+                    }
+                    drift = 0;
+                    const scaleX = advance / canvasWidth;
+                    if(scaleX<=1) {
+                        ctx.save();
+                        ctx.scale(scaleX, 1);
+                        ctx.fillText(c, currentX / scaleX, y);
+                        ctx.restore();
+                    }else{
+                        ctx.fillText(c, currentX+((advance - canvasWidth)/2), y);
+                    }
                 }
-                ctx.restore();
-                currentX+=points[i+2];
+                currentX+=advance;
+            }
+            if (run !== "") {
+                ctx.fillText(run, runX, y);
             }
         }
         ctx.restore();
