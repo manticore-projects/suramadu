@@ -24,11 +24,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK ${{ matrix.java }}
+      # JDK 27 is the toolchain for suramadu-app-toolkit-java27; the matrix JDK
+      # (listed last, so it becomes JAVA_HOME) runs Gradle and the other modules.
+      # setup-java exports JAVA_HOME_27_X64, which Gradle picks up via fromEnv.
+      - name: Set up JDK 27 + ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ matrix.java }}
+          java-version: |
+            27
+            ${{ matrix.java }}
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -56,7 +61,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build
-        run: ./gradlew clean assemble -x spotlessJava --no-daemon --warning-mode all
+        run: ./gradlew clean assemble -x spotlessJava --no-daemon --warning-mode all -Porg.gradle.java.installations.fromEnv=JAVA_HOME_27_X64
 
       - name: Upload ZIP distribution
         if: matrix.java == '21' && github.event_name == 'push'

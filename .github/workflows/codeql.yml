@@ -7,9 +7,9 @@
 # Four modules deliberately declare classes under fully-qualified names that
 # already exist elsewhere, and CodeQL scans only one of each clashing pair:
 #
-#   suramadu-app-toolkit-java11     JDK 11+ variants of WebToolkit,
-#   suramadu-app-toolkit-fx-java11  WebClipboardTransferable, WindowManager,
-#                                   Util and WebJSObject. Exactly one variant
+#   suramadu-app-toolkit-java11     JDK 11+ / 27+ variants of WebToolkit,
+#   suramadu-app-toolkit-java27     WebClipboardTransferable, WindowManager,
+#   suramadu-app-toolkit-fx-java11  Util and WebJSObject. Exactly one variant
 #                                   is placed on the classpath at runtime.
 #
 #   suramadu-modpatch/*             sun.awt.PlatformGraphicsInfo and
@@ -60,14 +60,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # The Gradle toolchain resolves its own JDK for compilation; this provides
-      # the JVM that Gradle itself runs on.
+      # JDK 27 is the toolchain for suramadu-app-toolkit-java27 (found via
+      # JAVA_HOME_27_X64, see Build step); JDK 25, listed last, becomes
+      # JAVA_HOME and runs Gradle.
       - name: Set up JDK
         if: matrix.build-mode == 'manual'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: |
+            27
+            25
 
       - name: Set up Gradle
         if: matrix.build-mode == 'manual'
@@ -83,6 +86,7 @@ jobs:
               # JDK-version variants: same fully-qualified names as the base
               # modules, only one of which is ever on the classpath.
               - 'suramadu-app-toolkit-java11/**'
+              - 'suramadu-app-toolkit-java27/**'
               - 'suramadu-app-toolkit-fx-java11/**'
 
               # Shims that deliberately shadow JDK classes via --patch-module.
@@ -110,6 +114,7 @@ jobs:
           ./gradlew classes \
             --no-daemon \
             --stacktrace \
+            -Porg.gradle.java.installations.fromEnv=JAVA_HOME_27_X64 \
             -x check
 
       - name: Perform CodeQL Analysis
