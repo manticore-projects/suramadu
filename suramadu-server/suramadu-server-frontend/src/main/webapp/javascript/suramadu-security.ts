@@ -1,5 +1,6 @@
 import $ from "jquery";
 import { loadTranslations } from "./suramadu-translate";
+import { markNavigatingAway } from "./suramadu-util";
 import DOMPurify from 'dompurify';
 
 const baseUrl = (window as any).webswingRequestBaseUrl ? ((window as any).webswingRequestBaseUrl + '/') : '';
@@ -40,6 +41,7 @@ loadTranslations(baseUrl).then((translations) => {
                         loginMsg = JSON.parse(response);
                     } catch (error) {
                         if (baseUrl) {
+                            markNavigatingAway();
                             window.top!.location.href = baseUrl;
                             return;
                         } else {
@@ -48,6 +50,7 @@ loadTranslations(baseUrl).then((translations) => {
                         }
                     }
                     if (loginMsg.redirectUrl != null) {
+                        markNavigatingAway();
                         window.top!.location.href = loginMsg.redirectUrl;
                     } else if (loginMsg.partialHtml != null) {
                         showPartial(url, element, loginMsg.partialHtml);

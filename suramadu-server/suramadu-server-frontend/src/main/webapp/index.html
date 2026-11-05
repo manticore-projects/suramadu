@@ -14,12 +14,13 @@
         browser never receives the download.
     -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'none'; connect-src 'self' ws: wss: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; worker-src blob:; frame-src 'self';">
+          content="default-src 'none'; connect-src 'self' ws: wss: data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; worker-src blob:; frame-src 'self'; manifest-src 'self';">
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
     <link rel="stylesheet" href="css/style.css"/>
     <link rel="icon" href="favicon.ico"/>
     <link rel="manifest" href="manifest.json"/>
+    <meta name="theme-color" content="#030146"/>
     <style>
         /* Source and licence notice:
            AGPL-3.0 section 13 requires the source offer to be presented to

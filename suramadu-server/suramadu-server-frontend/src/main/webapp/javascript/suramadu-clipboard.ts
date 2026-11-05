@@ -24,17 +24,49 @@ export interface IClipboardService {
 const copyEventType = appFrameProtoIn.CopyEventMsgInProto.CopyEventMsgTypeProto
 const ieWindow = window as typeof window & { clipboardData: any }
 
+// how long we wait for the server's CopyEventMsgOut before aborting a direct clipboard write
+const DIRECT_COPY_TIMEOUT_MS = 10000;
 
 export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClipboardService> {
     public html?: string
     public pasteHtml?: string;
     public copyBar?: JQuery<HTMLElement> & { wsEventData?: appFrameProtoOut.ICopyEventMsgOutProto, minimized?: boolean };
     public pasteDialog?: JQuery<HTMLElement>;
+    // pending direct (async Clipboard API) write started inside the Ctrl+C user gesture,
+    // resolved when the server's clipboard content arrives
+    private directCopy?: { resolve: (text: string, html: string) => void; cancel: () => void; };
+    // last successfully written direct-copy content, to drop duplicate CopyEventMsgOut
+    // (one Swing copy action may call Clipboard.setContents() more than once)
+    private lastDirectCopy?: { text: string, time: number };
 
     public ready = () => {
         this.html = this.api.translate(htmlTemplate);
         this.pasteHtml = this.api.translate(pasteHtmlTemplate);
+        this.prewarmPastePermission();
     };
+
+    // Trigger the browser's one-time clipboard-read permission prompt on the first user
+    // click instead of stalling the first in-app paste action behind it. Only on browsers
+    // whose Permissions API knows 'clipboard-read' (Chromium); Firefox/Safari prompt
+    // per-read natively and would show a confusing unprompted paste popup here.
+    private prewarmPastePermission() {
+        const permissions = (navigator as any).permissions;
+        if (permissions == null || typeof permissions.query !== 'function') {
+            return;
+        }
+        const handler = () => {
+            document.removeEventListener('mousedown', handler, true);
+            if (!this.directPasteSupported() || !this.api.cfg.hasControl) {
+                return;
+            }
+            permissions.query({ name: 'clipboard-read' }).then((status: any) => {
+                if (status.state === 'prompt') {
+                    (navigator.clipboard as any).readText().catch(() => undefined);
+                }
+            }).catch(() => undefined);
+        };
+        document.addEventListener('mousedown', handler, true);
+    }
 
     public provides() {
         return {
@@ -54,7 +86,11 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
     public copy(event: ClipboardEvent, cut?: boolean) {
 
         if (this.copyBar == null) {
-            if (this.api.cfg.ieVersion && this.api.cfg.ieVersion <= 11) {
+            if (this.directCopySupported()) {
+                // start the async clipboard write NOW, while the Ctrl+C/CMD+C user activation
+                // is still alive; the ClipboardItem promises resolve once the server responds
+                this.startDirectCopy();
+            } else if (this.api.cfg.ieVersion && this.api.cfg.ieVersion <= 11) {
                 ieWindow.clipboardData.setData('Text', '');
             } else {
                 event.clipboardData?.setData('text/plain', '');
@@ -144,7 +180,130 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
         });
     }
 
+    /* ---------- direct clipboard (async Clipboard API) ---------- */
+
+    private directClipboardEnabled(): boolean {
+        return this.api.cfg.directClipboard !== false && window.isSecureContext === true
+            && !this.api.cfg.ieVersion && navigator.clipboard != null;
+    }
+
+    private directCopySupported(): boolean {
+        return this.directClipboardEnabled() && typeof ClipboardItem !== 'undefined'
+            && typeof (navigator.clipboard as any).write === 'function';
+    }
+
+    private directPasteSupported(): boolean {
+        const clip = navigator.clipboard as any;
+        return this.directClipboardEnabled()
+            && (typeof clip?.read === 'function' || typeof clip?.readText === 'function');
+    }
+
+    private startDirectCopy() {
+        this.cancelDirectCopy(); // abort a stale pending write (e.g. rapid repeated Ctrl+C)
+
+        let resolveText!: (b: Blob) => void;
+        let rejectText!: (r?: any) => void;
+        let resolveHtml!: (b: Blob) => void;
+        let rejectHtml!: (r?: any) => void;
+        const textPromise = new Promise<Blob>((res, rej) => { resolveText = res; rejectText = rej; });
+        const htmlPromise = new Promise<Blob>((res, rej) => { resolveHtml = res; rejectHtml = rej; });
+        // suppress unhandled-rejection noise when the write is aborted
+        textPromise.catch(() => undefined);
+        htmlPromise.catch(() => undefined);
+
+        const timeout = window.setTimeout(() => this.cancelDirectCopy(), DIRECT_COPY_TIMEOUT_MS);
+
+        this.directCopy = {
+            resolve: (text: string, html: string) => {
+                clearTimeout(timeout);
+                resolveText(new Blob([text], { type: 'text/plain' }));
+                resolveHtml(new Blob([html], { type: 'text/html' }));
+            },
+            cancel: () => {
+                clearTimeout(timeout);
+                rejectText(new Error('Suramadu: direct copy aborted'));
+                rejectHtml(new Error('Suramadu: direct copy aborted'));
+            }
+        };
+
+        // must be called synchronously within the user gesture
+        navigator.clipboard.write([new ClipboardItem({
+            'text/plain': textPromise,
+            'text/html': htmlPromise
+        })]).catch((e) => {
+            // aborted or not permitted - clipboard stays unchanged
+            console.debug('Suramadu: direct clipboard write did not complete.', e);
+        });
+    }
+
+    private cancelDirectCopy() {
+        if (this.directCopy != null) {
+            this.directCopy.cancel();
+            this.directCopy = undefined;
+        }
+    }
+
+    private htmlToText(html: string): string {
+        try {
+            return new DOMParser().parseFromString(html, 'text/html').body.textContent || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    private textToHtml(text: string): string {
+        const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return '<pre>' + escaped + '</pre>';
+    }
+
+    /* ------------------------------------------------------------ */
+
     public displayCopyBar(data: appFrameProtoOut.ICopyEventMsgOutProto) { // trigered by swing app
+        const hasText = data.text != null && data.text.length !== 0;
+        const hasHtml = data.html != null && data.html.length !== 0;
+
+        if (this.directCopy != null) {
+            if (hasText || hasHtml) {
+                // complete the pending direct write - no copy bar, no second Ctrl+C
+                const text = hasText ? data.text! : this.htmlToText(data.html!);
+                const html = hasHtml ? data.html! : this.textToHtml(data.text!);
+                this.directCopy.resolve(text, html);
+                this.directCopy = undefined;
+                this.lastDirectCopy = { text, time: Date.now() };
+                return;
+            }
+            // image- or file-only content: abort the text write and fall back to the copy bar
+            this.cancelDirectCopy();
+        } else if (hasText || hasHtml) {
+            // unsolicited copy event: an in-app copy action (menu/button), or a second
+            // Clipboard.setContents() within one copy action
+            const text = hasText ? data.text! : this.htmlToText(data.html!);
+            const html = hasHtml ? data.html! : this.textToHtml(data.text!);
+            if (this.lastDirectCopy != null && this.lastDirectCopy.text === text
+                && Date.now() - this.lastDirectCopy.time < 2000) {
+                // duplicate of content just written directly - drop silently
+                return;
+            }
+            if (this.directCopySupported()) {
+                // try a silent direct write (Chromium grants clipboard-write to the focused
+                // tab without a gesture; elsewhere the triggering click may still be alive);
+                // fall back to the copy bar if not permitted
+                navigator.clipboard.write([new ClipboardItem({
+                    'text/plain': new Blob([text], { type: 'text/plain' }),
+                    'text/html': new Blob([html], { type: 'text/html' })
+                })]).then(() => {
+                    this.lastDirectCopy = { text, time: Date.now() };
+                }).catch(() => {
+                    this.showCopyBar(data);
+                });
+                return;
+            }
+        }
+
+        this.showCopyBar(data);
+    }
+
+    private showCopyBar(data: appFrameProtoOut.ICopyEventMsgOutProto) {
         if (this.copyBar != null) {
             this.close();
         }
@@ -298,6 +457,7 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
     }
 
     public close() {
+        this.cancelDirectCopy();
         if (this.copyBar != null) {
             this.copyBar.hide("fast");
             this.copyBar.remove();
@@ -307,6 +467,51 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
     }
 
     public displayPasteDialog(requestCtx: appFrameProtoOut.IPasteRequestMsgOutProto) {
+        if (this.directPasteSupported()) {
+            // try to read the local clipboard directly (browser may show a native permission
+            // prompt or paste confirmation); fall back to the legacy dialog if not allowed
+            this.readLocalClipboard().then((content) => {
+                this.sendPasteEvent(false, content.text, content.html, content.img);
+            }).catch(() => {
+                this.showPasteDialog(requestCtx);
+            });
+            return;
+        }
+        this.showPasteDialog(requestCtx);
+    }
+
+    private async readLocalClipboard(): Promise<{ text?: string, html?: string, img?: string }> {
+        const clip = navigator.clipboard as any;
+        if (typeof clip.read === 'function') {
+            try {
+                const items: any[] = await clip.read();
+                let text: string | undefined;
+                let html: string | undefined;
+                let img: string | undefined;
+                for (const item of items) {
+                    for (const type of item.types) {
+                        if (type === 'text/plain') {
+                            text = await (await item.getType(type)).text();
+                        } else if (type === 'text/html') {
+                            html = await (await item.getType(type)).text();
+                        } else if (type.indexOf('image/') === 0 && img == null) {
+                            img = await blobToDataURL(await item.getType(type));
+                        }
+                    }
+                }
+                return { text, html, img };
+            } catch (e) {
+                // permission denied or read failed - try plain text below
+            }
+        }
+        if (typeof clip.readText === 'function') {
+            const text = await clip.readText();
+            return { text };
+        }
+        throw new Error('Clipboard read not supported');
+    }
+
+    private showPasteDialog(requestCtx: appFrameProtoOut.IPasteRequestMsgOutProto) {
         if (this.pasteDialog != null) {
             this.closePasteDialog();
         }
@@ -350,4 +555,13 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
         this.api.focusDefault();
     }
 
+}
+
+function blobToDataURL(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+    });
 }

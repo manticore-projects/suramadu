@@ -147,9 +147,9 @@ public class WebEventDispatcher extends AbstractEventDispatcher {
         dispatchKeyEventInSwing(w, e);
         if ((event.getKeycode() == 32 || event.getKeycode() == 9 || event.getKeycode() == 8)
             && event.getType() == KeyboardEventMsgIn.KeyEventType.keydown && !event.isCtrl()) {// space
-                                                                                               // keycode
-                                                                                               // handle
-                                                                                               // press
+          // keycode
+          // handle
+          // press
           event.setType(KeyboardEventMsgIn.KeyEventType.keypress);
           dispatchKeyboardEvent(event);
         }
@@ -369,6 +369,7 @@ public class WebEventDispatcher extends AbstractEventDispatcher {
         boolean saveMode = FileDialogEventType.AutoSave == fileChooserEventType;
         fc.rescanCurrentDirectory();
         if (e.getFiles() != null && e.getFiles().size() > 0) {
+          boolean allUploaded = true; // true if every selected file came from a browser upload
           if (fc.isMultiSelectionEnabled()) {
             List<File> arr = new ArrayList<File>();
             for (int i = 0; i < e.getFiles().size(); i++) {
@@ -376,13 +377,18 @@ public class WebEventDispatcher extends AbstractEventDispatcher {
                 arr.add(new File(fc.getCurrentDirectory(),
                     getFileUploadMap().get(e.getFiles().get(i))));
               } else if (saveMode) {
+                allUploaded = false;
                 arr.add(new File(Util.getTimestampedTransferFolder("autosavemulti"),
                     e.getFiles().get(i)));
+              } else {
+                allUploaded = false;
               }
             }
+            allUploaded = allUploaded && !arr.isEmpty();
             fc.setSelectedFiles(arr.toArray(new File[0]));
             AppLogger.info("Files selected :" + arr);
           } else {
+            allUploaded = getFileUploadMap().get(e.getFiles().get(0)) != null;
             if (getFileUploadMap().get(e.getFiles().get(0)) != null) {
               File f =
                   new File(fc.getCurrentDirectory(), getFileUploadMap().get(e.getFiles().get(0)));
@@ -408,6 +414,12 @@ public class WebEventDispatcher extends AbstractEventDispatcher {
           if (FileDialogEventType.AutoUpload == fileChooserEventType
               || FileDialogEventType.AutoSave == fileChooserEventType) {
             fc.approveSelection();
+          } else if (FileDialogEventType.Open == fileChooserEventType && allUploaded
+              && isUploadAutoApprove(fc)) {
+            // regular (visible) file chooser: a completed browser upload selects the file(s)
+            // and confirms the dialog in one step - no extra "Open" click needed
+            AppLogger.info("Auto-approving uploaded file selection.");
+            fc.approveSelection();
           }
         } else {
           if (FileDialogEventType.AutoUpload == fileChooserEventType
@@ -418,6 +430,17 @@ public class WebEventDispatcher extends AbstractEventDispatcher {
       }
       getFileUploadMap().clear();
     });
+  }
+
+  private static boolean isUploadAutoApprove(JFileChooser fc) {
+    // per-dialog client property overrides the global system property
+    Object override = fc.getClientProperty(Constants.FILE_CHOOSER_PROP_UPLOAD_AUTO_APPROVE);
+    if (override instanceof Boolean b) {
+      return b;
+    }
+    // default ON; disable globally with -Dwebswing.uploadAutoApprove=false
+    return Boolean.parseBoolean(
+        System.getProperty(Constants.SWING_START_SYS_PROP_UPLOAD_AUTO_APPROVE, "true"));
   }
 
   protected void handleUploadEvent(final UploadEventMsgIn upload) {

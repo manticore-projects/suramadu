@@ -1,11 +1,11 @@
 <div align="center">
 
-# Suramadu 27.1
+# Suramadu 27.2
 
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
-[![Version](https://img.shields.io/badge/Version-27.1-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
+[![Version](https://img.shields.io/badge/Version-27.2-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
 [![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2027-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
@@ -45,6 +45,39 @@ The complete corresponding source for every released version is in this reposito
 ---
 
 ## What's New
+
+### Client Experience (27.2)
+
+The clipboard and file-transfer round trips were reworked around modern browser APIs, so the
+common actions — copy, paste, open a file, save a file — take one step instead of several.
+Everything here degrades gracefully: on plain-HTTP origins and older browsers the previous flows
+are kept as fallbacks, and the Java `JFileChooser` / `Clipboard` APIs are unchanged.
+
+- **Direct clipboard copy & paste.** Copying inside the Swing application places the content on the
+  system clipboard in a single `Ctrl+C` — no intermediate dialog, no second keystroke. The
+  browser's asynchronous Clipboard API is armed within the copy gesture and resolved when the
+  server's clipboard content arrives; in-app *Copy* buttons and multi-step copies write silently
+  too. Pasting reads the local clipboard directly, with the permission prompt moved to session
+  start instead of interrupting the first paste. On plain-HTTP origins the previous copy-bar /
+  paste-dialog flow is used instead. Off switch: `directClipboard: false`.
+- **One-step file open.** When an application requests a local file, the browser's native file
+  picker opens immediately; the chosen file uploads and the `JFileChooser` confirms itself, so the
+  user no longer steps through pick → upload → select → *Open*. Files can also be dropped anywhere
+  in the window while a dialog is open. A completed upload now auto-approves a visible
+  (server-browsing) chooser as well (`webswing.uploadAutoApprove`, default on).
+- **Per-dialog local / server choice.** An application can decide, per dialog, whether a chooser
+  browses the client or the server — no global switch required — via `JFileChooser` client
+  properties: `webswingFileDialogMode` = `"local"` (native picker) or `"server"` (server file
+  system), and `webswingUploadAutoApprove` (`Boolean`).
+- **Native Save As.** On Chromium, downloads stream to a user-chosen location through the browser's
+  save dialog; other browsers keep the default download.
+- **Installable app window (PWA).** A web manifest lets the application install as a standalone
+  window — no tab strip or address bar, a taskbar icon per deployment. In fullscreen on Chromium,
+  system shortcuts (`Ctrl+W`, `Ctrl+T`) reach the Swing application instead of the browser via the
+  Keyboard Lock API.
+- **Accidental-close protection.** Closing the browser tab or window during a live session asks for
+  confirmation; navigations the application itself triggers (shutdown, logout, redirects) never
+  prompt. Off switch: `warnOnClose: false`.
 
 ### Rendering Reliability (27.1)
 
@@ -166,9 +199,9 @@ The fork is hardened for the deployments it was built for.
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.1.0.zip
-unzip suramadu-27.1.0.zip
-cd suramadu-27.1.0
+curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.2.0.zip
+unzip suramadu-27.2.0.zip
+cd suramadu-27.2.0
 
 # Start the server
 ./run.sh start
@@ -219,7 +252,7 @@ cd suramadu
 
 ```bash
 # Extract to your deployment directory
-unzip build/dist/suramadu-27.1.0.zip -d /opt/suramadu
+unzip build/dist/suramadu-27.2.0.zip -d /opt/suramadu
 
 # Configure your Swing application
 vim /opt/suramadu/suramadu.config

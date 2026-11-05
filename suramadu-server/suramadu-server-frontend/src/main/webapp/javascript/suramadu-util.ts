@@ -1,5 +1,16 @@
 import { Translations } from "./suramadu-translate";
 
+// Shared across modules: true once we start a navigation we initiated ourselves
+// (server-sent redirect, login/logout/session-timeout redirect, selector reload).
+// The beforeunload close warning reads this so it fires only for genuine user-initiated
+// tab/window closes, not for our own page navigations. Set just before assigning
+// window.location; it is never reset because the page is unloading anyway.
+export const navigationState = { navigatingAway: false };
+
+export function markNavigatingAway() {
+    navigationState.navigatingAway = true;
+}
+
 interface ILoginData {
     securityToken?: string,
     realm?: string,
@@ -78,7 +89,7 @@ export function Util(translations: Translations) {
         };
     }
 
-    
+
     function doWebswingLogin(baseUrl: string, element: (() => JQuery<HTMLElement>) | JQuery<HTMLElement>, loginData: ILoginData | string, successCallback: (data: any, request: JQuery.jqXHR) => void, failedCallback?: () => void) {
         if (typeof loginData === 'string') {
             const params = new URLSearchParams(loginData);
@@ -134,6 +145,7 @@ export function Util(translations: Translations) {
                             return;
                     }
                     if (loginMsg.redirectUrl != null) {
+                        markNavigatingAway();
                         window.top!.location.href = loginMsg.redirectUrl;
                     } else if (loginMsg.partialHtml != null) {
                     	updateLoginDialogContent(elementResolved, translate(loginMsg.partialHtml));
@@ -214,6 +226,7 @@ export function Util(translations: Translations) {
                         return;
                 }
                 if (loginMsg.redirectUrl != null) {
+                    markNavigatingAway();
                     window.top!.location.href = loginMsg.redirectUrl;
                         return;
                 } else if (loginMsg.partialHtml != null) {

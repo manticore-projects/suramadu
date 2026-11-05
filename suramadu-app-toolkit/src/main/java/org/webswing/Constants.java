@@ -31,6 +31,20 @@ public interface Constants {
   String SWING_START_SYS_PROP_ALLOW_JSLINK = "webswing.allowJsLink";
   String SWING_START_SYS_PROP_JSLINK_WHITELIST = "webswing.jsLinkWhitelist";
   String SWING_START_SYS_PROP_ALLOW_LOCAL_CLIPBOARD = "webswing.allowLocalClipboard";
+  // default true: a completed browser upload auto-approves a visible (Open mode) file
+  // chooser; disable globally with -Dwebswing.uploadAutoApprove=false
+  String SWING_START_SYS_PROP_UPLOAD_AUTO_APPROVE = "webswing.uploadAutoApprove";
+
+  // per-dialog JFileChooser client property keys (set by the application BEFORE showing the
+  // dialog; plain strings so apps need no compile-time dependency on Suramadu; ignored by a
+  // regular desktop toolkit). They override the corresponding global settings for one dialog.
+  // "local": browser-native file picker (AutoUpload/AutoSave), Swing dialog hidden;
+  // "server": regular visible JFileChooser browsing the server file system
+  String FILE_CHOOSER_PROP_DIALOG_MODE = "webswingFileDialogMode";
+  String FILE_CHOOSER_DIALOG_MODE_LOCAL = "local";
+  String FILE_CHOOSER_DIALOG_MODE_SERVER = "server";
+  // Boolean: auto-approve the dialog after a browser upload completes (server mode)
+  String FILE_CHOOSER_PROP_UPLOAD_AUTO_APPROVE = "webswingUploadAutoApprove";
   String SWING_SESSION_TIMEOUT_SEC = "webswing.sessionTimeoutSec";
   int SWING_SESSION_TIMEOUT_SEC_DEFAULT = 300;
   String SWING_SESSION_TIMEOUT_SEC_IF_FILECHOOSER_ACTIVE =

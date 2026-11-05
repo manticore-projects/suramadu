@@ -3,7 +3,7 @@ import { appFrameProtoIn } from "./proto/proto.in";
 import { commonProto } from "./proto/proto.common";
 import { DirectDraw as WebswingDirectDraw } from "suramadu-directdraw-javascript";
 import { DirectDrawWorkerClient } from "./suramadu-dd-client";
-import { getDpr, GUID, getImageString, getTimeZone, fixConnectionUrl } from './suramadu-util';
+import { getDpr, GUID, getImageString, getTimeZone, fixConnectionUrl, navigationState } from './suramadu-util';
 import { ModuleDef, IInjected } from "./suramadu-inject";
 import { AppFrame } from "./suramadu-socket";
 import DOMPurify from 'dompurify';
@@ -187,12 +187,15 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 		if (!isMirror) {
 			this.api.registerTouch(this.api.touchBarConfig);
 		}
-		window.addEventListener('beforeunload', () => this.beforeUnloadEventHandler());
+		window.addEventListener('beforeunload', this.beforeUnloadListener);
+		window.addEventListener('pagehide', this.pageHideListener);
 		if (!isMirror) {
 			window.addEventListener('hashchange', () => this.handshake());
+			document.addEventListener('fullscreenchange', this.fullscreenChangeHandler);
 		}
-		document.addEventListener("visibilitychange", () => this.visibilityChangeHandler());
+		document.addEventListener("visibilitychange", this.visibilityListener);
 		this.resetState();
+		this.sessionEnded = false;
 		this.api.cfg.clientId = clientId;
 		this.api.cfg.canPaint = true;
 		this.api.cfg.hasControl = !isMirror;
@@ -204,9 +207,64 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 		this.api.showDialog(this.api.dialogs.startingDialog);
 	}
 
-	public beforeUnloadEventHandler() {
+	// stable references so dispose() can actually deregister them
+	// (removeEventListener with a fresh arrow or a bare method reference never matches)
+	private beforeUnloadListener = (e: BeforeUnloadEvent) => this.beforeUnloadEventHandler(e);
+	private pageHideListener = () => this.disposeOnUnload();
+	private visibilityListener = () => this.visibilityChangeHandler();
+
+	// set true by every terminal path (app shutdown, logout, non-retrying socket close,
+	// dispose). The close warning is suppressed once the session is known dead, so a page
+	// left open after the Swing app exited never prompts. Reset on each new session.
+	private sessionEnded = false;
+
+	public markSessionEnded() {
+		this.sessionEnded = true;
+	}
+
+	public beforeUnloadEventHandler(e?: BeforeUnloadEvent) {
+		if (e != null && this.api.cfg.warnOnClose !== false && this.isSessionLive()) {
+			// ask the browser for a close confirmation; actual cleanup runs on 'pagehide'
+			// so a cancelled close keeps the session alive
+			e.preventDefault();
+			e.returnValue = '';
+			return;
+		}
+		this.disposeOnUnload();
+	}
+
+	// only warn for a genuine user-initiated close: not a navigation we triggered
+	// ourselves (shutdown/login/logout redirect), not already ended, in control, painting,
+	// and no terminal dialog (stopped/disconnected/timed out) covering the page
+	private isSessionLive(): boolean {
+		return !navigationState.navigatingAway && !this.sessionEnded
+			&& this.api.cfg.hasControl && this.api.cfg.canPaint
+			&& !this.api.cfg.mirrorMode && this.api.currentDialog() == null;
+	}
+
+	private unloading = false;
+
+	private disposeOnUnload() {
+		if (this.unloading) {
+			return;
+		}
+		this.unloading = true;
 		this.dispose();
 		this.api.disposeSocket();
+	}
+
+	private fullscreenChangeHandler = () => {
+		// capture system-level shortcuts (Ctrl+W, Ctrl+T, ...) while in fullscreen,
+		// so they reach the Swing app instead of closing the session (Chromium only)
+		const kb = (navigator as any).keyboard;
+		if (kb == null || typeof kb.lock !== 'function') {
+			return;
+		}
+		if (document.fullscreenElement != null) {
+			kb.lock().catch(() => undefined);
+		} else if (typeof kb.unlock === 'function') {
+			kb.unlock();
+		}
 	}
 
 	public continueSession() {
@@ -403,14 +461,17 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 	}
 
 	public dispose() {
+		this.sessionEnded = true;
 		clearInterval(this.timer1);
 		this.unload();
 		this.api.sendInput();
 		this.resetState();
 		this.api.closeFileDialog();
 		this.api.hideDialogBar();
-		window.removeEventListener('beforeunload', this.beforeUnloadEventHandler);
-		document.removeEventListener("visibilitychange", this.visibilityChangeHandler);
+		window.removeEventListener('beforeunload', this.beforeUnloadListener);
+		window.removeEventListener('pagehide', this.pageHideListener);
+		document.removeEventListener("visibilitychange", this.visibilityListener);
+		document.removeEventListener('fullscreenchange', this.fullscreenChangeHandler);
 		if (this.directDraw) {
 			this.directDraw.dispose();
 		}
@@ -445,11 +506,15 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 		}
 		if (data.event != null && !this.api.cfg.recordingPlayback) {
 			if (data.event === SimpleEvent.shutDownAutoLogoutNotification) {
+				this.sessionEnded = true;
 				this.api.disconnect();
 				if (this.api.cfg.mirror === false) {
 					this.api.logout();
 				}
 			} else if (data.event === SimpleEvent.shutDownNotification) {
+				if (!this.startNewSessionOnShutdown) {
+					this.sessionEnded = true;
+				}
 				if (this.startNewSessionOnShutdown) {
 					this.startNewSessionOnShutdown = false;
 					this.api.newSession();

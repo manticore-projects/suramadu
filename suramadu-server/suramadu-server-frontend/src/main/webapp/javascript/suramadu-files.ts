@@ -1,7 +1,7 @@
 import htmlTemplate from './templates/upload.html'
 import 'blueimp-file-upload'
 import { ModuleDef } from './suramadu-inject'
-import { isIOS } from "./suramadu-util";
+import { isIOS, markNavigatingAway } from "./suramadu-util";
 import { appFrameProtoOut } from './proto/proto.out';
 import { commonProto } from "./proto/proto.common";
 
@@ -118,6 +118,8 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
     }
 
     private redirect(url: string) {
+        // our own navigation (e.g. post-shutdown redirect) - don't trigger the close warning
+        markNavigatingAway();
         window.location.href = url;
     }
 
@@ -409,10 +411,36 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
             autoUploadfileDialogTransferBarClientId.val(instanceId!);
             getAutoFileInput().prop("multiple", data.isMultiSelection);
             getAutoFileInput().attr("accept", data.filter!);
+            // accept drag&drop anywhere in the app while the dialog is active
+            // (reset to null in fhClose so a stray drop can't upload without a dialog)
+            autoJqUpload.fileupload('option', 'dropZone', rootElement);
             this.animateShow(autoUploadBar);
+            // open the native file picker right away if the user activation from the click
+            // that opened the Swing dialog is still alive; otherwise the bar's browse
+            // button remains as fallback
+            const inputEl = getAutoFileInput()[0] as HTMLInputElement & { showPicker?: () => void };
+            if (inputEl != null) {
+                try {
+                    if (typeof inputEl.showPicker === 'function') {
+                        inputEl.showPicker();
+                    } else {
+                        inputEl.click();
+                    }
+                } catch (e) {
+                    // no transient user activation - user clicks the browse button instead
+                }
+            }
         };
 
         const fhAautoSave = (data: appFrameProtoOut.IFileDialogEventMsgOutProto, _?: string) => {
+            // if the application preset a valid file name, accept it without prompting -
+            // the browser's own download UI allows renaming anyway
+            const preset = data.selection;
+            if (this.api.cfg.autoAcceptSaveName !== false && preset != null && preset.length > 0
+                && /^[a-zA-Z0-9. _-]+$/.test(preset)) {
+                this.filesSelected([preset]);
+                return;
+            }
             if (autoSaveBar.closest(rootElement).length === 0) {
                 rootElement.append(autoSaveBar);
             }
@@ -445,6 +473,7 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         };
 
         const fhClose = () => {
+            autoJqUpload.fileupload('option', 'dropZone', null);
             if (uploadBar != null && uploadBar.closest(rootElement).length !== 0) {
                 if (!errorTimeout) {
                     uploadBar.hide("fast", () => {
@@ -469,6 +498,19 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
             }
         };
 
+        const legacyIframeDownload = (url: string) => {
+            const hiddenIFrameID = 'hiddenDownloader' + url;
+            let iframe = doc[0].getElementById(hiddenIFrameID) as HTMLIFrameElement;
+            if (iframe != null) {
+                iframe.parentNode?.removeChild(iframe);
+            }
+            iframe = doc[0].createElement('iframe');
+            iframe.id = hiddenIFrameID;
+            iframe.style.display = 'none';
+            doc[0].body.appendChild(iframe);
+            iframe.src = this.getFileUrl(url);
+        }
+
         const fhDownload = (url: string) => {
             if (isIOS()) {
                 const msg = {
@@ -477,17 +519,17 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
                     "buttonMessage": "${files.downloadLink.download.button}"
                 };
                 displayDownloadLinkDialog(msg, this.getFileUrl(url));
+            } else if (typeof (window as any).showSaveFilePicker === 'function') {
+                // Chromium: real "Save as" dialog streaming to a user-chosen location
+                this.downloadViaFilePicker(this.getFileUrl(url)).catch((e: any) => {
+                    if (e == null || e.name !== 'AbortError') {
+                        // not permitted (e.g. no user activation) - use the default download
+                        legacyIframeDownload(url);
+                    }
+                    // AbortError: the user cancelled the picker deliberately - do nothing
+                });
             } else {
-                const hiddenIFrameID = 'hiddenDownloader' + url;
-                let iframe = doc[0].getElementById(hiddenIFrameID) as HTMLIFrameElement;
-                if (iframe != null) {
-                    iframe.parentNode?.removeChild(iframe);
-                }
-                iframe = doc[0].createElement('iframe');
-                iframe.id = hiddenIFrameID;
-                iframe.style.display = 'none';
-                doc[0].body.appendChild(iframe);
-                iframe.src = this.getFileUrl(url);
+                legacyIframeDownload(url);
             }
         }
 
@@ -572,6 +614,23 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
     private getFileUrl(url: string) {
         let baseUrl = this.api.cfg.connectionUrl + url;
         return baseUrl;
+    }
+
+    private async downloadViaFilePicker(fileUrl: string) {
+        const response = await fetch(fileUrl, { credentials: 'same-origin' });
+        if (!response.ok || response.body == null) {
+            throw new Error('Download failed: ' + response.status);
+        }
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(disposition);
+        const suggestedName = match != null
+            ? decodeURIComponent(match[1].replace(/"/g, '').trim())
+            : 'download';
+        // must be called while the triggering user activation is still alive,
+        // otherwise throws NotAllowedError and the caller falls back
+        const handle = await (window as any).showSaveFilePicker({ suggestedName });
+        const writable = await handle.createWritable();
+        await response.body.pipeTo(writable);
     }
 
 }

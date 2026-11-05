@@ -83,6 +83,9 @@ interface IInstanceContext {
         windowModalBlockedChanged(htmlOrCanvasWindow: HtmlOrCanvasWindow): void;
     };
     hideTouchBar: boolean;
+    directClipboard: boolean;
+    autoAcceptSaveName: boolean;
+    warnOnClose: boolean;
 }
 
 export class WebswingInstanceModule extends ModuleDef<typeof webswingInstanceInjectable, IWebswingInstanceService> {
@@ -160,7 +163,10 @@ export class WebswingInstanceModule extends ModuleDef<typeof webswingInstanceInj
                 // tslint:disable-next-line: no-empty
                 windowModalBlockedChanged(_) { }
             },
-            hideTouchBar: false
+            hideTouchBar: false,
+            directClipboard: true,
+            autoAcceptSaveName: true,
+            warnOnClose: true
         };
     }
 
@@ -236,6 +242,9 @@ export class WebswingInstanceModule extends ModuleDef<typeof webswingInstanceInj
             cfg.onReady = typeof options.onReady === 'function' ? options.onReady : cfg.onReady;
             cfg.compositingWindowsListener = typeof options.compositingWindowsListener === 'object' ? options.compositingWindowsListener : cfg.compositingWindowsListener;
             cfg.hideTouchBar = options.hideTouchBar != null ? JSON.parse(options.hideTouchBar) : cfg.hideTouchBar;
+            cfg.directClipboard = options.directClipboard != null ? JSON.parse(options.directClipboard) : cfg.directClipboard;
+            cfg.autoAcceptSaveName = options.autoAcceptSaveName != null ? JSON.parse(options.autoAcceptSaveName) : cfg.autoAcceptSaveName;
+            cfg.warnOnClose = options.warnOnClose != null ? JSON.parse(options.warnOnClose) : cfg.warnOnClose;
         }
         appletParams = appletParams != null ? appletParams : readAppletParams(cfg.rootElementWrapper);
         if (appletParams != null) {
