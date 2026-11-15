@@ -1,0 +1,49 @@
+# Submits the Gradle dependency graph to GitHub, scoped to what the product
+# actually ships: runtime classpaths only. Build tooling (plugin classpaths,
+# build-logic, test/dev configurations) is deliberately excluded - those
+# dependencies never leave the build machine, and their transitives (e.g. the
+# dependency-check plugin's own BouncyCastle) were drowning the Dependabot
+# alerts in noise that no customer ever receives.
+#
+# Prerequisite: "Automatic dependency submission" must be DISABLED in the
+# repository settings (Settings -> Advanced Security), otherwise GitHub's
+# unscoped automatic graph overwrites this one.
+#
+# Build-tooling currency is handled by pinned plugin versions and routine
+# bumps, not by Dependabot alerts.
+
+name: Dependency Graph
+
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  dependency-submission:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            27
+            25
+
+      - name: Generate and submit dependency graph
+        uses: gradle/actions/dependency-submission@v4
+        env:
+          # Only what ships: runtime classpaths of the product modules.
+          DEPENDENCY_GRAPH_INCLUDE_CONFIGURATIONS: 'runtimeClasspath'
+          # Build tooling is not a deliverable.
+          DEPENDENCY_GRAPH_EXCLUDE_PROJECTS: ':build-logic|:buildSrc'
+        with:
+          build-root-directory: .
