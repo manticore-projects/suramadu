@@ -72,9 +72,16 @@ jobs:
             27
             25
 
+      # cache-disabled: CodeQL's manual build mode builds its database by
+      # tracing javac invocations. A restored Gradle cache turns every
+      # compileJava task into UP-TO-DATE / FROM-CACHE, no compiler runs,
+      # the database stays empty and the analyze step fails with
+      # "didn't build any of it". This scan must always compile for real.
       - name: Set up Gradle
         if: matrix.build-mode == 'manual'
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -108,11 +115,16 @@ jobs:
       # Compile only. Tests, formatting and the other quality gates run in their
       # own workflows; repeating them here would slow the scan and make it fail
       # for reasons unrelated to security analysis.
+      #
+      # clean + --no-build-cache force actual javac runs for the CodeQL tracer
+      # (see the setup-gradle note above); org.gradle.caching=true in
+      # gradle.properties would otherwise serve everything from cache.
       - name: Build
         if: matrix.build-mode == 'manual'
         run: |
-          ./gradlew classes \
+          ./gradlew clean classes \
             --no-daemon \
+            --no-build-cache \
             --stacktrace \
             -Porg.gradle.java.installations.fromEnv=JAVA_HOME_27_X64 \
             -x check
