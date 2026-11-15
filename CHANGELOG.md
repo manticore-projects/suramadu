@@ -2,6 +2,50 @@
 
 Changelog of suramadu.
 
+## 27.3.0 (2026-11-15)
+
+### Other changes
+
+
+## 27.2.0 (2026-11-05)
+
+### Features
+
+-  **client**  direct clipboard, one-step file dialogs, installable PWA ([61335](https://github.com/manticore-projects/suramadu/commit/613350b0f8a4c86) Andreas Reichel)  
+
+### Other changes
+
+
+## 27.1.0 (2026-10-25)
+
+### Features
+
+-  DirectDraw benchmark harness (stats sink, self-driving app, analyzer) ([a24db](https://github.com/manticore-projects/suramadu/commit/a24dbdd091692db) Andreas Reichel)  
+
+### Bug Fixes
+
+-  **toolkit**  log paint-ack timeout once per stall; UTF-8 benchmark CSV ([90002](https://github.com/manticore-projects/suramadu/commit/90002321f898c9a) Andreas Reichel)  
+-  **directdraw**  prevent UI corruption on slow connections; faster text and image rendering ([7c5f2](https://github.com/manticore-projects/suramadu/commit/7c5f27a1f51882d) Andreas Reichel)  
+
+### Other changes
+
+
+## 27.0.0 (2026-10-23)
+
+### Features
+
+-  drop unused webpack-dev-server ([1baa1](https://github.com/manticore-projects/suramadu/commit/1baa1652d15b315) Andreas Reichel)  
+-  add suramadu-app-toolkit-java27 for JDK 27 ([c104f](https://github.com/manticore-projects/suramadu/commit/c104fe89a1c894e) Andreas Reichel)  
+
+### Bug Fixes
+
+-  GitRepositoryState null-string handling and startup banner ([9de83](https://github.com/manticore-projects/suramadu/commit/9de833a98c6b5e9) Andreas Reichel)  
+-  mask credentials in security module logging ([abcb2](https://github.com/manticore-projects/suramadu/commit/abcb2a6705497b0) Andreas Reichel)  
+-  GitRepositoryState null-string handling and startup banner ([10e68](https://github.com/manticore-projects/suramadu/commit/10e68aaa1fe4327) Andreas Reichel)  
+
+### Other changes
+
+
 ## 26.5.1 (2026-10-01)
 
 ### Features
