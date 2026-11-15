@@ -1,5 +1,4 @@
 import htmlTemplate from './templates/upload.html'
-import 'blueimp-file-upload'
 import { ModuleDef } from './suramadu-inject'
 import { isIOS, markNavigatingAway } from "./suramadu-util";
 import { appFrameProtoOut } from './proto/proto.out';
@@ -38,6 +37,15 @@ interface IDownloadDialogData {
     title: string;
     message: string;
     buttonMessage: string;
+}
+
+/** One in-flight upload request. The server protocol is one file per request. */
+interface IActiveUpload {
+    xhr: XMLHttpRequest;
+    /** original (client-side) file name - key for the uploadingFiles bookkeeping */
+    name: string;
+    loaded: number;
+    total: number;
 }
 
 export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService> {
@@ -128,12 +136,19 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         const rootElement = (doc.find(".suramadu-element-content") as unknown) as JQuery<HTMLElement>;
         rootElement.append(this.html!);
 
-        let jqXHRFileupload: any[] = [];
-        let uploadingFiles: any[] = [];
-        let uploadedFiles: any[] = [];
+        // Native XHR upload core. Replaced blueimp-file-upload (and with it
+        // jquery.iframe-transport and the vendored jquery.ui.widget copy):
+        // the server protocol stays unchanged - multipart POST to the 'file'
+        // endpoint with fields 'instanceId' and 'files[]', one file per
+        // request, JSON response { files: [ { name, id } ] }.
+        let activeUploads: IActiveUpload[] = [];
+        let uploadingFiles: string[] = [];
+        let uploadedFiles: string[] = [];
         let timeout: number | undefined;
         let errorTimeout: number | undefined;
         let closeAfterErrorTimeout: boolean;
+        // while the auto-upload dialog is active, a drop anywhere in the app uploads
+        let autoDropActive = false;
 
         const uploadBar = rootElement.find('div[data-id="uploadBar"]');
         const fileDialogTransferBarClientId = uploadBar.find('input[data-id="fileDialogTransferBarClientId"]');
@@ -144,7 +159,6 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         const uploadBtn = uploadBar.find('div[data-id="fileUploadBtn"]');
 
         const dropZone = uploadBar.find('div[data-id="fileDropArea"]');
-        const fileUpload = uploadBar.find('form[data-id="fileupload"]');
         const cancelBtn = uploadBar.find('button[data-id="cancelBtn"]');
         const getFileInput = () => uploadBar.find('input[data-id="fileInput"]');
 
@@ -156,7 +170,6 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         const fileDialogSuccessMessageContent = rootElement.find('div[data-id="fileDialogSuccessMessageContent"]');
 
         const autoUploadBar = rootElement.find('div[data-id="autoUploadBar"]');
-        const autoFileupload = autoUploadBar.find('form[data-id="autoFileupload"]')
         const uploadAutoUploadButton = autoUploadBar.find('button[data-id="uploadAutoUploadButton"]');
         const cancelAutoUploadButton = autoUploadBar.find('button[data-id="cancelAutoUploadButton"]');
         const getAutoFileInput = () => autoUploadBar.find('input[data-id="autoFileInput"]');
@@ -180,59 +193,56 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         linkDialog.hide();
         linkDialog.detach();
 
-        const fileuploadadd = (_: JQueryEventObject, data: any, fileuploadelement: any) => {
-        	fileDialogSuccessMessageContent.html("");
-        	fileDialogSuccessMessage.hide("fast");
-
-            fileuploadelement.url = this.getFileUrl("file");
-            data.url = this.getFileUrl("file");
-            data.files.forEach((file: any) => {
-                uploadingFiles.push(file.name);
+        // Combined progress over all in-flight requests (blueimp's 'progressall')
+        const renderProgress = () => {
+            let loaded = 0;
+            let total = 0;
+            activeUploads.forEach((u) => {
+                loaded += u.loaded;
+                total += u.total;
             });
-            jqXHRFileupload.push(data);
-            setProgressBarVisible(true);
-        }
-
-        const fileuploadfail = (_: any, data: any) => {
-            setProgressBarVisible(false);
-            if (data.jqXHR.statusText !== 'abort') {
-            	fileDialogErrorMessageContent.append('<p>' + data.jqXHR.responseText + '</p>');
-                if (!errorTimeout) {
-                    this.animateShow(fileDialogErrorMessage);
-                } else {
-                    clearTimeout(errorTimeout);
-                }
-                data.files.forEach((file: any) => {
-                    const index = uploadingFiles.indexOf(file.name);
-                    uploadingFiles.splice(index, 1);
-                });
-                checkUploadingFinished();
-                errorTimeout = setTimeout(() => {
-                    errorTimeout = undefined;
-                    fileDialogErrorMessageContent.html("");
-                    fileDialogErrorMessage.hide("fast");
-                    if (closeAfterErrorTimeout) {
-                        close();
-                    }
-                }, 3000);
-            }
-        }
-
-        // Changes the looks of the progress bar based on the percentage of
-        // data loaded
-        const fileuploadprogressall = (_: any, data: any) => {
-            const progress = parseInt(String(data.loaded / data.total * 100), 10);
+            const progress = total > 0 ? Math.floor(loaded / total * 100) : 0;
             const $jsProgressBar = rootElement.find(".ws-progress-bar");
             const $jsProgressText = rootElement.find(".ws-progress-text");
             $jsProgressBar.css('width', progress + '%');
             $jsProgressText.find("em").text(progress + "%");
         }
 
-        const fileuploaddone = (_: any, data: any) => {
+        const uploadFailed = (entry: IActiveUpload, message: string) => {
+            setProgressBarVisible(false);
+            fileDialogErrorMessageContent.append('<p>' + (message || '') + '</p>');
+            if (!errorTimeout) {
+                this.animateShow(fileDialogErrorMessage);
+            } else {
+                clearTimeout(errorTimeout);
+            }
+            const index = uploadingFiles.indexOf(entry.name);
+            if (index >= 0) {
+                uploadingFiles.splice(index, 1);
+            }
+            checkUploadingFinished();
+            errorTimeout = setTimeout(() => {
+                errorTimeout = undefined;
+                fileDialogErrorMessageContent.html("");
+                fileDialogErrorMessage.hide("fast");
+                if (closeAfterErrorTimeout) {
+                    close();
+                }
+            }, 3000);
+        }
+
+        const uploadDone = (entry: IActiveUpload, responseText: string) => {
+            let result: any;
+            try {
+                result = JSON.parse(responseText);
+            } catch (e) {
+                uploadFailed(entry, responseText);
+                return;
+            }
             const $jsProgressText = rootElement.find(".ws-progress-text");
             $jsProgressText.find("em").text(this.api.translate("files.progComplete"));
-            const finishedFile = data.result.files[0].name;
-            const fileId = data.result.files[0].id;
+            const finishedFile = result.files[0].name;
+            const fileId = result.files[0].id;
 
             this.api.send({
                 upload: {
@@ -241,8 +251,55 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
             });
 
             uploadedFiles.push(finishedFile);
-            uploadingFiles.splice(uploadingFiles.indexOf(finishedFile), 1);
+            const index = uploadingFiles.indexOf(entry.name);
+            if (index >= 0) {
+                uploadingFiles.splice(index, 1);
+            }
             checkUploadingFinished();
+        }
+
+        const uploadFiles = (files: ArrayLike<File> | null, instanceId: string) => {
+            if (files == null || files.length === 0) {
+                return;
+            }
+            fileDialogSuccessMessageContent.html("");
+            fileDialogSuccessMessage.hide("fast");
+            setProgressBarVisible(true);
+
+            Array.prototype.forEach.call(files, (file: File) => {
+                const xhr = new XMLHttpRequest();
+                const entry: IActiveUpload = { xhr, name: file.name, loaded: 0, total: Math.max(file.size, 1) };
+                activeUploads.push(entry);
+                uploadingFiles.push(file.name);
+
+                const formData = new FormData();
+                formData.append('instanceId', instanceId);
+                formData.append('files[]', file, file.name);
+
+                xhr.open('POST', this.getFileUrl('file'));
+                xhr.withCredentials = true;
+                xhr.upload.onprogress = (e: ProgressEvent) => {
+                    if (e.lengthComputable) {
+                        entry.loaded = e.loaded;
+                        entry.total = e.total;
+                        renderProgress();
+                    }
+                };
+                xhr.onload = () => {
+                    entry.loaded = entry.total;
+                    renderProgress();
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        uploadDone(entry, xhr.responseText);
+                    } else {
+                        uploadFailed(entry, xhr.responseText);
+                    }
+                };
+                xhr.onerror = () => {
+                    uploadFailed(entry, xhr.responseText);
+                };
+                // onabort intentionally empty: cancelUpload drives the UI reset
+                xhr.send(formData);
+            });
         }
 
         const checkUploadingFinished = () => {
@@ -256,36 +313,9 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         		setTimeout(() => {
         		   	setProgressBarVisible(false);
         		}, 5000);
-                jqXHRFileupload = [];
+                activeUploads = [];
             }
         }
-
-        // TODO fix typings for fileupload plugin (remove all "any" types)
-        const autoJqUpload = (autoFileupload as any).fileupload({
-            xhrFields: {
-                withCredentials: true
-            },
-            url: this.getFileUrl("file"),
-            dataType: 'json',
-            dropZone: null
-        });
-        autoJqUpload.bind('fileuploadfail', fileuploadfail);
-        autoJqUpload.bind('fileuploadprogressall', fileuploadprogressall);
-        autoJqUpload.bind('fileuploadadd', (e: any, data: any) => fileuploadadd(e, data, autoJqUpload));
-        autoJqUpload.bind('fileuploaddone', fileuploaddone);
-
-        const jqUpload = (fileUpload as any).fileupload({
-            xhrFields: {
-                withCredentials: true
-            },
-            url: this.getFileUrl("file"),
-            dataType: 'json',
-            dropZone
-        });
-        jqUpload.bind('fileuploadfail', fileuploadfail);
-        jqUpload.bind('fileuploadprogressall', fileuploadprogressall);
-        jqUpload.bind('fileuploadadd', (e: any, data: any) => fileuploadadd(e, data, jqUpload));
-        jqUpload.bind('fileuploaddone', fileuploaddone);
 
         const cancelFileSelection = () => {
             this.sendMessageEvent(SimpleEventType.cancelFileSelection);
@@ -294,11 +324,56 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
 
         const cancelUpload = () => {
             this.filesSelected([]);
-            jqXHRFileupload.forEach((el) => {
-                el.abort();
+            activeUploads.forEach((u) => {
+                try {
+                    u.xhr.abort();
+                } catch (e) {
+                    // already finished
+                }
             });
+            activeUploads = [];
+            uploadingFiles = [];
             setProgressBarVisible(false);
         }
+
+        // file pickers: clear the input after reading so picking the same
+        // file again re-triggers 'change' (blueimp used to replace the input)
+        uploadBar.on('change', 'input[data-id="fileInput"]', (e) => {
+            const input = e.target as HTMLInputElement;
+            uploadFiles(input.files, fileDialogTransferBarClientId.val() as string);
+            input.value = '';
+        });
+
+        autoUploadBar.on('change', 'input[data-id="autoFileInput"]', (e) => {
+            const input = e.target as HTMLInputElement;
+            uploadFiles(input.files, autoUploadfileDialogTransferBarClientId.val() as string);
+            input.value = '';
+        });
+
+        // drag & drop
+        const extractDroppedFiles = (e: { originalEvent?: Event }): FileList | null => {
+            const oe = e.originalEvent as DragEvent | undefined;
+            return oe != null && oe.dataTransfer != null ? oe.dataTransfer.files : null;
+        }
+
+        dropZone.bind('dragover', (e) => {
+            // required so the browser allows the drop
+            e.preventDefault();
+        });
+
+        dropZone.bind('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadFiles(extractDroppedFiles(e), fileDialogTransferBarClientId.val() as string);
+        });
+
+        rootElement.bind('drop', (e) => {
+            // never let the browser navigate to a dropped file
+            e.preventDefault();
+            if (autoDropActive) {
+                uploadFiles(extractDroppedFiles(e), autoUploadfileDialogTransferBarClientId.val() as string);
+            }
+        });
 
         cancelAutoSaveButton.bind('click', cancelFileSelection);
         cancelAutoUploadButton.bind('click', cancelFileSelection);
@@ -310,10 +385,6 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
 
         downloadSelectedButton.bind('click', () => {
             this.sendMessageEvent(SimpleEventType.downloadFile);
-        });
-
-        rootElement.bind('drop', (e) => {
-            e.preventDefault();
         });
 
         uploadAutoUploadButton.bind('click', () => {
@@ -386,7 +457,9 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
             linkBtn[0].focus();
         }
 
-        rootElement.bind('dragover', () => {
+        rootElement.bind('dragover', (e) => {
+            // required so the browser allows the drop anywhere in the app
+            e.preventDefault();
             if (!timeout) {
                 dropZone.addClass('ws-filebar-dropArea--ondrag');
             } else {
@@ -412,8 +485,8 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
             getAutoFileInput().prop("multiple", data.isMultiSelection);
             getAutoFileInput().attr("accept", data.filter!);
             // accept drag&drop anywhere in the app while the dialog is active
-            // (reset to null in fhClose so a stray drop can't upload without a dialog)
-            autoJqUpload.fileupload('option', 'dropZone', rootElement);
+            // (reset in fhClose so a stray drop can't upload without a dialog)
+            autoDropActive = true;
             this.animateShow(autoUploadBar);
             // open the native file picker right away if the user activation from the click
             // that opened the Swing dialog is still alive; otherwise the bar's browse
@@ -473,7 +546,7 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         };
 
         const fhClose = () => {
-            autoJqUpload.fileupload('option', 'dropZone', null);
+            autoDropActive = false;
             if (uploadBar != null && uploadBar.closest(rootElement).length !== 0) {
                 if (!errorTimeout) {
                     uploadBar.hide("fast", () => {

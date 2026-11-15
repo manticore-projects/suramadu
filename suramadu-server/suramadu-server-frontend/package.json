@@ -34,7 +34,6 @@
   "devDependencies": {
     "@types/dompurify": "^3.0.5",
     "@types/jquery": "^3.5.0",
-    "@types/jquery.fileupload": "^9.22.0",
     "@types/node": "^22.0.0",
     "compression-webpack-plugin": "^12.0.0",
     "copy-webpack-plugin": "^14.0.0",
@@ -56,12 +55,8 @@
     "webpack-merge": "^6.0.0"
   },
   "dependencies": {
-    "blueimp-file-upload": "^10.1.0",
-    "bootstrap-sass": "^3.4.3",
     "dompurify": "^3.2.4",
     "jquery": "^3.7.0",
-    "jquery-ui": "^1.14.0",
-    "jquery.iframe-transport": "^1.0.0",
     "protobufjs": "^7.6.5",
     "suramadu-directdraw-javascript": "../../suramadu-directdraw/suramadu-directdraw-javascript"
   },
