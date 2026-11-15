@@ -1,11 +1,11 @@
 <div align="center">
 
-# Suramadu 27.2
+# Suramadu 27.3
 
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
-[![Version](https://img.shields.io/badge/Version-27.2-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
+[![Version](https://img.shields.io/badge/Version-27.3-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
 [![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2027-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
@@ -45,6 +45,25 @@ The complete corresponding source for every released version is in this reposito
 ---
 
 ## What's New
+
+### Leaner Client & Supply Chain (27.3)
+
+A dependency-hygiene release: the client sheds its legacy JavaScript libraries in favour of
+native browser APIs, and the whole build — Java modules and npm lockfiles alike — is now
+continuously scanned with OWASP Dependency-Check. The WAR shrinks by roughly 6 MB.
+
+- **Native print preview.** Print jobs open the PDF directly and the browser's built-in viewer
+  renders it (zoom, print, download included). The bundled pdf.js viewer — a 2020-vintage
+  `pdfjs-dist-viewer-min` 2.4 carrying CVE-2024-4367 and an unpatched tail behind it — is gone.
+- **Native file upload.** `blueimp-file-upload` (and with it `jquery.iframe-transport` and its
+  vendored `jquery.ui.widget` copy) is replaced by a plain `XMLHttpRequest` upload core: same
+  server protocol, same drag & drop and combined progress, fewer moving parts. Upload error
+  responses are now rendered strictly as text, never as HTML.
+- **Dead dependencies removed.** `bootstrap-sass` (Bootstrap 3, EOL since 2019) and `jquery-ui`
+  were declared but never imported; both are dropped from the dependency tree.
+- **OWASP Dependency-Check in the build.** `gradle dependencyCheckAggregate` scans every module
+  against the NVD, including the npm lockfiles of the frontend and DirectDraw JavaScript —
+  see the [Security](#security) section.
 
 ### Client Experience (27.2)
 
@@ -175,7 +194,15 @@ The fork is hardened for the deployments it was built for.
 [![Semgrep](https://github.com/manticore-projects/suramadu/actions/workflows/semgrep.yml/badge.svg)](https://github.com/manticore-projects/suramadu/actions/workflows/semgrep.yml)
 [![Semgrep](https://img.shields.io/badge/semgrep-scanning-green?style=flat-square&logo=semgrep)](https://semgrep.dev)
 
-**Continuous monitoring** via Snyk (dependency CVEs), Semgrep (SAST/OWASP Top 10), SpotBugs (bytecode analysis), and Codacy (code quality). CycloneDX SBOM generated with every release.
+**Continuous monitoring** via OWASP Dependency-Check (dependency CVEs, Java and npm), Snyk, Semgrep (SAST/OWASP Top 10), SpotBugs (bytecode analysis), and Codacy (code quality). CycloneDX SBOM generated with every release.
+
+**Dependency scanning** *(27.3)* — OWASP Dependency-Check runs as a single Gradle aggregate over
+all modules: Java runtime classpaths plus the npm lockfiles of the frontend and DirectDraw
+JavaScript, matched against the NVD with the Node-Package and RetireJS analyzers. Findings are
+triaged, not silenced: vulnerable or dead dependencies are removed or replaced first
+(pdf.js viewer, blueimp-file-upload, bootstrap-sass in this release), and the few remaining
+suppressions carry a written justification, reviewer and date in
+`config/dependency-check/suppressions.xml`. As of 27.3 the scan reports **zero findings**.
 
 **Proactive hardening** against entire vulnerability classes — not just known CVEs: deserialization allowlists (CWE-502), SSRF scheme validation (CWE-918), XSS content-type enforcement (CWE-79), Zip Slip / path traversal protection (CWE-22), log injection sanitisation (CWE-117), AES-CBC→AES-GCM migration, and HMAC-signed file identifiers.
 
@@ -199,9 +226,9 @@ The fork is hardened for the deployments it was built for.
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.2.0.zip
-unzip suramadu-27.2.0.zip
-cd suramadu-27.2.0
+curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.3.0.zip
+unzip suramadu-27.3.0.zip
+cd suramadu-27.3.0
 
 # Start the server
 ./run.sh start
@@ -252,7 +279,7 @@ cd suramadu
 
 ```bash
 # Extract to your deployment directory
-unzip build/dist/suramadu-27.2.0.zip -d /opt/suramadu
+unzip build/dist/suramadu-27.3.0.zip -d /opt/suramadu
 
 # Configure your Swing application
 vim /opt/suramadu/suramadu.config
