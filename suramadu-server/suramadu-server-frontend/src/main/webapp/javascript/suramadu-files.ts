@@ -48,6 +48,11 @@ interface IActiveUpload {
     total: number;
 }
 
+/** Response of the 'file' upload endpoint. */
+interface IUploadResponse {
+    files: Array<{ name: string; id: string }>;
+}
+
 export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService> {
     private html?: string;
     private holderMap: { [K: string]: IActiveFileDialogHolder } = {};
@@ -210,7 +215,8 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
 
         const uploadFailed = (entry: IActiveUpload, message: string) => {
             setProgressBarVisible(false);
-            fileDialogErrorMessageContent.append('<p>' + (message || '') + '</p>');
+            // server/proxy response is untrusted - render as text, never as HTML
+            fileDialogErrorMessageContent.append($('<p>').text(message || ''));
             if (!errorTimeout) {
                 this.animateShow(fileDialogErrorMessage);
             } else {
@@ -232,10 +238,14 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         }
 
         const uploadDone = (entry: IActiveUpload, responseText: string) => {
-            let result: any;
+            let result: IUploadResponse;
             try {
-                result = JSON.parse(responseText);
+                result = JSON.parse(responseText) as IUploadResponse;
             } catch (e) {
+                uploadFailed(entry, responseText);
+                return;
+            }
+            if (result?.files?.[0] == null) {
                 uploadFailed(entry, responseText);
                 return;
             }
@@ -339,21 +349,21 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         // file pickers: clear the input after reading so picking the same
         // file again re-triggers 'change' (blueimp used to replace the input)
         uploadBar.on('change', 'input[data-id="fileInput"]', (e) => {
-            const input = e.target as HTMLInputElement;
-            uploadFiles(input.files, fileDialogTransferBarClientId.val() as string);
-            input.value = '';
+            const el = e.target as HTMLInputElement;
+            uploadFiles(el.files, fileDialogTransferBarClientId.val() as string);
+            el.value = '';
         });
 
         autoUploadBar.on('change', 'input[data-id="autoFileInput"]', (e) => {
-            const input = e.target as HTMLInputElement;
-            uploadFiles(input.files, autoUploadfileDialogTransferBarClientId.val() as string);
-            input.value = '';
+            const el = e.target as HTMLInputElement;
+            uploadFiles(el.files, autoUploadfileDialogTransferBarClientId.val() as string);
+            el.value = '';
         });
 
         // drag & drop
         const extractDroppedFiles = (e: { originalEvent?: Event }): FileList | null => {
             const oe = e.originalEvent as DragEvent | undefined;
-            return oe != null && oe.dataTransfer != null ? oe.dataTransfer.files : null;
+            return oe?.dataTransfer?.files ?? null;
         }
 
         dropZone.bind('dragover', (e) => {
