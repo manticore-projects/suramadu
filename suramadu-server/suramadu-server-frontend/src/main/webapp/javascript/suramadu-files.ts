@@ -50,7 +50,7 @@ interface IActiveUpload {
 
 /** Response of the 'file' upload endpoint. */
 interface IUploadResponse {
-    files: Array<{ name: string; id: string }>;
+    files: { name: string; id: string }[];
 }
 
 export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService> {
@@ -216,7 +216,9 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         const uploadFailed = (entry: IActiveUpload, message: string) => {
             setProgressBarVisible(false);
             // server/proxy response is untrusted - render as text, never as HTML
-            fileDialogErrorMessageContent.append($('<p>').text(message || ''));
+            const p = doc[0].createElement('p');
+            p.textContent = message || '';
+            fileDialogErrorMessageContent.append(p);
             if (!errorTimeout) {
                 this.animateShow(fileDialogErrorMessage);
             } else {
@@ -238,21 +240,22 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         }
 
         const uploadDone = (entry: IActiveUpload, responseText: string) => {
-            let result: IUploadResponse;
+            let result: Partial<IUploadResponse> | null;
             try {
-                result = JSON.parse(responseText) as IUploadResponse;
+                result = JSON.parse(responseText) as Partial<IUploadResponse> | null;
             } catch (e) {
                 uploadFailed(entry, responseText);
                 return;
             }
-            if (result?.files?.[0] == null) {
+            const first = result?.files?.[0];
+            if (first == null) {
                 uploadFailed(entry, responseText);
                 return;
             }
             const $jsProgressText = rootElement.find(".ws-progress-text");
             $jsProgressText.find("em").text(this.api.translate("files.progComplete"));
-            const finishedFile = result.files[0].name;
-            const fileId = result.files[0].id;
+            const finishedFile = first.name;
+            const fileId = first.id;
 
             this.api.send({
                 upload: {
@@ -348,16 +351,16 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
 
         // file pickers: clear the input after reading so picking the same
         // file again re-triggers 'change' (blueimp used to replace the input)
-        uploadBar.on('change', 'input[data-id="fileInput"]', (e) => {
-            const el = e.target as HTMLInputElement;
-            uploadFiles(el.files, fileDialogTransferBarClientId.val() as string);
-            el.value = '';
+        uploadBar.on('change', 'input[data-id="fileInput"]', () => {
+            const inputEl = getFileInput()[0] as HTMLInputElement;
+            uploadFiles(inputEl.files, fileDialogTransferBarClientId.val() as string);
+            inputEl.value = '';
         });
 
-        autoUploadBar.on('change', 'input[data-id="autoFileInput"]', (e) => {
-            const el = e.target as HTMLInputElement;
-            uploadFiles(el.files, autoUploadfileDialogTransferBarClientId.val() as string);
-            el.value = '';
+        autoUploadBar.on('change', 'input[data-id="autoFileInput"]', () => {
+            const inputEl = getAutoFileInput()[0] as HTMLInputElement;
+            uploadFiles(inputEl.files, autoUploadfileDialogTransferBarClientId.val() as string);
+            inputEl.value = '';
         });
 
         // drag & drop
