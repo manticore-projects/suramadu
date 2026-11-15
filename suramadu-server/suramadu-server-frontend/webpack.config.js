@@ -78,18 +78,12 @@ module.exports = {
       jQuery: "jquery",
       "window.jQuery": "jquery"
     }),
+    // The bundled pdf.js print viewer (print/web, print/build) is gone:
+    // print jobs open the PDF URL directly and the browser's native viewer
+    // renders it (see fhPrint in suramadu-files.ts).
     new CopyPlugin({
       patterns: [
-        { from: ROOT + '/suramadu-init.js',                  to: DESTINATION + '/suramadu-init.js' },
-        { from: NODE_PATH + '/pdfjs-dist-viewer-min/build/minified/build', to: TARGET + '/print/build' },
-        {
-          from: NODE_PATH + '/pdfjs-dist-viewer-min/build/minified/web',
-          to: TARGET + '/print/web',
-          globOptions: {
-            ignore: ['**/*.pdf', '**/locale/**']
-          }
-        },
-        { from: NODE_PATH + '/pdfjs-dist-viewer-min/build/minified/web/locale/en-US', to: TARGET + '/print/web/locale/en-US' }
+        { from: ROOT + '/suramadu-init.js', to: DESTINATION + '/suramadu-init.js' }
       ]
     }),
     // Pre-generate .gz files

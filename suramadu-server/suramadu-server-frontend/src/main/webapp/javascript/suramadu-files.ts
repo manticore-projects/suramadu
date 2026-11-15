@@ -183,7 +183,7 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         const fileuploadadd = (_: JQueryEventObject, data: any, fileuploadelement: any) => {
         	fileDialogSuccessMessageContent.html("");
         	fileDialogSuccessMessage.hide("fast");
-        	
+
             fileuploadelement.url = this.getFileUrl("file");
             data.url = this.getFileUrl("file");
             data.files.forEach((file: any) => {
@@ -233,18 +233,18 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
             $jsProgressText.find("em").text(this.api.translate("files.progComplete"));
             const finishedFile = data.result.files[0].name;
             const fileId = data.result.files[0].id;
-            
+
             this.api.send({
                 upload: {
                     fileId
                 }
             });
-            
+
             uploadedFiles.push(finishedFile);
             uploadingFiles.splice(uploadingFiles.indexOf(finishedFile), 1);
             checkUploadingFinished();
         }
-        
+
         const checkUploadingFinished = () => {
         	if (uploadingFiles.length === 0) {
         		if (uploadedFiles.length > 0) {
@@ -547,7 +547,13 @@ export class FilesModule extends ModuleDef<typeof filesInjectable, IFilesService
         };
 
         const fhPrint = (url: string) => {
-            const finalUrl = this.api.cfg.connectionUrl + 'print/web/viewer.html?file=' + encodeURIComponent(this.getFileUrl(url));
+            // The print PDF opens directly and the browser's native PDF viewer renders
+            // it (zoom, print, download included). This replaced the bundled pdf.js
+            // viewer (print/web/viewer.html), which carried its own CVE tail
+            // (CVE-2024-4367 et al.) for no gain on evergreen browsers.
+            // Requires the server to serve the PDF with Content-Type: application/pdf
+            // and Content-Disposition: inline.
+            const finalUrl = this.getFileUrl(url);
 
             if (isIOS()) {
                 const msg = {

@@ -62,7 +62,6 @@
     "jquery": "^3.7.0",
     "jquery-ui": "^1.14.0",
     "jquery.iframe-transport": "^1.0.0",
-    "pdfjs-dist-viewer-min": "^2.4.456",
     "protobufjs": "^7.6.5",
     "suramadu-directdraw-javascript": "../../suramadu-directdraw/suramadu-directdraw-javascript"
   },

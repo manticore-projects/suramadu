@@ -5,12 +5,40 @@ plugins {
     id "org.sonarqube" version "latest.release"
     id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "latest.release"
     id 'io.github.ben-manes.versions' version "latest.release"
+    id 'org.owasp.dependencycheck' version '12.1.8'   // bewusst gepinnt, nicht latest.release
 }
 
 apply plugin: 'com.github.node-gradle.node'
 
 repositories {
     mavenCentral()
+}
+
+dependencyCheck {
+    nvd {
+        apiKey = providers.gradleProperty('nvdApiKey')
+                .orElse(providers.environmentVariable('NVD_API_KEY'))
+                .getOrNull()
+        delay = 4000
+        maxRetryCount = 5
+    }
+    analyzers {
+        assemblyEnabled = false
+        ossIndex { enabled = false }
+        nodeAudit { enabled = false }   // Node-Package- + RetireJS-Analyzer bleiben aktiv
+    }
+    scanConfigurations = ['runtimeClasspath']
+    suppressionFile = rootProject.file('config/dependency-check/suppressions.xml').absolutePath
+
+    // JavaScript: package-lock.json folders
+    scanSet = [
+            file('suramadu-server/suramadu-server-frontend'),
+            file('suramadu-directdraw/suramadu-directdraw-javascript'),
+    ]
+}
+
+tasks.named('dependencyCheckAggregate').configure {
+    notCompatibleWithConfigurationCache('dependency-check-gradle is not CC compatible')
 }
 
 // ─── Node.js (installed at root, shared by frontend subprojects) ─────
@@ -54,7 +82,7 @@ subprojects {
     }
 
     pmd {
-        toolVersion = "7.22.0"
+        toolVersion = "7.29.0"
 
         consoleOutput = true
         ignoreFailures = true

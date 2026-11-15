@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+    <suppress>
+        <notes>CVE-2026-0994 is a recursion-depth bypass in protobuf's Python
+            json_format.ParseDict; CPE over-match via shared google:protobuf CPE.
+            protobuf-java's own recursion issue (CVE-2024-7254) is fixed since 3.25.5,
+            we ship 3.25.9. (reviewed 2026-11-15, AR)</notes>
+        <packageUrl regex="true">^pkg:maven/com\.google\.protobuf/protobuf-java@.*$</packageUrl>
+        <vulnerabilityName>CVE-2026-0994</vulnerabilityName>
+    </suppress>
+</suppressions>
