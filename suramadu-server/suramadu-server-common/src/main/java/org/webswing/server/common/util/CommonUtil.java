@@ -243,15 +243,10 @@ public class CommonUtil {
   }
 
   public static void transferStreams(InputStream is, OutputStream os) throws IOException {
-    try {
-      byte[] buf = new byte[bufferSize];
-      int bytesRead;
-      while ((bytesRead = is.read(buf)) != -1) {
-        os.write(buf, 0, bytesRead);
-      }
-    } finally {
-      is.close();
-      os.close();
+    // try-with-resources closes both streams even if the first close() throws,
+    // unlike the previous manual finally block.
+    try (InputStream in = is; OutputStream out = os) {
+      in.transferTo(out);
     }
   }
 

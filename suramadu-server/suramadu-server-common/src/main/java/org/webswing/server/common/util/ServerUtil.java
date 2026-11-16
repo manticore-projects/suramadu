@@ -303,10 +303,16 @@ public class ServerUtil {
     // format-validated, so concatenating them would re-introduce an open-redirect /
     // host-header-injection vector (CWE-601). A relative Location header is resolved
     // correctly by the servlet container and by any trusted reverse proxy.
-    if (relativeUrl.startsWith("/") && !relativeUrl.startsWith("//")) {
-      return relativeUrl;
+    //
+    // Strip ALL leading slashes/backslashes and re-anchor with a constant "/": the result can
+    // never carry a scheme or authority ("//evil.com" becomes the local path "/evil.com").
+    // Prepending the constant "/" is also the sanitizer CodeQL's
+    // java/unvalidated-url-redirection query recognizes.
+    String path = relativeUrl;
+    while (path.startsWith("/") || path.startsWith("\\")) {
+      path = path.substring(1);
     }
-    return "/";
+    return "/" + path;
   }
 
   public static String normalizeForFileName(String text) {

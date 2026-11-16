@@ -144,8 +144,8 @@ public class SessionRecordingPlayback {
         // Deserialization input is restricted to an explicit allowlist via RECORDING_FILTER
         // (deny-all "!*") and the header length is capped by MAX_OBJECT_HEADER_SIZE, so no
         // untrusted gadget chain is reachable.
-        ObjectInputStream ois = new ObjectInputStream(bis); // nosemgrep:
-                                                            // java.lang.security.audit.object-deserialization.object-deserialization
+        /* nosemgrep: java.lang.security.audit.object-deserialization.object-deserialization */
+        ObjectInputStream ois = new ObjectInputStream(bis);
         ois.setObjectInputFilter(RECORDING_FILTER);
         in = ois;
         Object o = in.readObject();

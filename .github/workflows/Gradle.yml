@@ -22,13 +22,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # JDK 27 is the toolchain for suramadu-app-toolkit-java27; the matrix JDK
       # (listed last, so it becomes JAVA_HOME) runs Gradle and the other modules.
       # setup-java exports JAVA_HOME_27_X64, which Gradle picks up via fromEnv.
       - name: Set up JDK 27 + ${{ matrix.java }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
         with:
           distribution: temurin
           java-version: |
@@ -36,7 +36,7 @@ jobs:
             ${{ matrix.java }}
 
       - name: Cache Gradle packages
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.gradle/caches
@@ -48,7 +48,7 @@ jobs:
             gradle-${{ runner.os }}-
 
       - name: Cache Node modules
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             suramadu-directdraw/suramadu-directdraw-javascript/node_modules
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload ZIP distribution
         if: matrix.java == '21' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: zip
           path: build/dist/suramadu-*.zip
@@ -74,7 +74,7 @@ jobs:
 
       - name: Upload TAR distribution
         if: matrix.java == '21' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tar
           path: build/dist/suramadu-*.tar.bz2

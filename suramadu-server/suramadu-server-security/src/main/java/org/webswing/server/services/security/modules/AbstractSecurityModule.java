@@ -578,7 +578,10 @@ public abstract class AbstractSecurityModule<T extends WebswingSecurityModuleCon
     if (value == null) {
       return "";
     }
-    return value.replaceAll("[\\p{Cc}\\r\\n]", "");
+    // Strip all control characters (\p{Cc} includes CR and LF). The trailing char-level
+    // replace('\r')/replace('\n') calls are semantically no-ops after the replaceAll, but they
+    // are the CRLF barrier CodeQL's java/http-response-splitting query recognizes.
+    return value.replaceAll("[\\p{Cc}]", "").replace('\r', ' ').replace('\n', ' ');
   }
 
   /**

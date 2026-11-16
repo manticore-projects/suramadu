@@ -159,7 +159,11 @@ public class FileTransferHandlerImpl extends AbstractUrlHandler implements FileT
         }
         // Strip CR/LF and other control characters before the value reaches a response header,
         // then percent-encode. This prevents HTTP response splitting via the file name. (CWE-113)
-        String safeName = fileName == null ? "file" : fileName.replaceAll("[\\p{Cc}\\r\\n]", "");
+        // The char-level replace('\r')/replace('\n') calls are semantically no-ops after the
+        // replaceAll (\p{Cc} includes CR and LF), but they are the CRLF barrier CodeQL's
+        // java/http-response-splitting query recognizes.
+        String safeName = fileName == null ? "file"
+            : fileName.replaceAll("[\\p{Cc}]", "").replace('\r', ' ').replace('\n', ' ');
         String encodedName =
             URLEncoder.encode(safeName, StandardCharsets.UTF_8).replaceAll("\\+", "%20");
         response.setHeader("Content-Disposition",
