@@ -61,6 +61,16 @@ distributions {
                 into '/'
             }
 
+            // ── SBOM (CycloneDX) ──────────────────────────────────────
+            // Full (transitive) BOM generated at the root project via:
+            //   ./gradlew --init-script init-cyclonedx.gradle build
+            // 'cyclonedx-direct' stays internal (license/review use only).
+            from(rootProject.layout.buildDirectory.dir('reports/cyclonedx')) {
+                include 'bom.json'
+                into '/'
+                rename { 'sbom.json' }
+            }
+
             // FIX: Replaced 'mode' with 'fileMode' for Gradle 9 configuration compliance
             filesMatching('**/*.sh') {
                 permissions {
@@ -81,6 +91,27 @@ distTar {
     destinationDirectory = layout.buildDirectory.dir('dist')
     compression = Compression.BZIP2
     archiveExtension = 'tar.bz2'
+}
+
+// ── SBOM wiring ──────────────────────────────────────────────────────
+// Only active when the CycloneDX plugin is applied (init-script run);
+// plain builds just warn and package without the SBOM.
+rootProject.plugins.withId('org.cyclonedx.bom') {
+    [tasks.named('distZip'), tasks.named('distTar')].each { t ->
+        t.configure { dependsOn rootProject.tasks.named('cyclonedxBom') }
+    }
+}
+
+[tasks.named('distZip'), tasks.named('distTar')].each { t ->
+    t.configure {
+        doFirst {
+            def bom = rootProject.layout.buildDirectory.file('reports/cyclonedx/bom.json').get().asFile
+            if (!bom.exists()) {
+                logger.warn("WARNING: SBOM not found ({}) — distribution ships without sbom.json. " +
+                        "Build with: ./gradlew --init-script init-cyclonedx.gradle build", bom)
+            }
+        }
+    }
 }
 
 // Skip deploy (matches Maven config)
