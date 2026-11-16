@@ -133,3 +133,22 @@ jobs:
         uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9 # v3.39.3
         with:
           category: "/language:${{ matrix.language }}"
+
+      # Badge gate: the README "CodeQL" badge is this workflow's status, so green must
+      # mean "zero open CodeQL findings on master". The analyze step above waits for
+      # SARIF processing before returning, so the alert list queried here already
+      # reflects this very scan. Alerts triaged in the Security tab (false positive /
+      # won't fix) are 'dismissed' and intentionally do not count as open.
+      - name: Fail if open CodeQL alerts exist on master
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALERTS: repos/${{ github.repository }}/code-scanning/alerts?tool_name=CodeQL&ref=refs/heads/master&state=open&per_page=100
+        run: |
+          count=$(gh api --paginate "$ALERTS" --jq length | awk '{s+=$1} END {print s+0}')
+          echo "Open CodeQL alerts on master: $count"
+          if [ "$count" -gt 0 ]; then
+            gh api --paginate "$ALERTS" --jq \
+              '.[] | "#\(.number) \(.rule.id) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)"'
+            exit 1
+          fi
