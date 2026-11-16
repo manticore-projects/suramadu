@@ -36,6 +36,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    permissions:
+      # contents: write is needed to push the badge JSON to the 'badges' branch
+      contents: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -77,7 +81,11 @@ jobs:
       # dependencyCheckAggregate resolves the subprojects' runtimeClasspath from the root
       # project at execution time, which Gradle rejects under parallel project execution
       # ("Resolution of the configuration ... was attempted without an exclusive lock").
+      # continue-on-error so the badge below gets published first; the final step
+      # re-raises the failure.
       - name: Run Dependency-Check
+        id: odc
+        continue-on-error: true
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
@@ -86,6 +94,43 @@ jobs:
             --no-parallel \
             --no-configuration-cache \
             -Porg.gradle.java.installations.fromEnv=JAVA_HOME_27_X64
+
+      # The README "Known CVEs" badge shows the distinct unsuppressed CVE count from the
+      # JSON report of this very scan; every value ever shown is in the 'badges' branch
+      # history. A failed scan without a report publishes "error" rather than a stale "0".
+      - name: Count CVEs
+        id: cves
+        if: github.ref == 'refs/heads/master'
+        run: |
+          report=build/reports/dependency-check-report.json
+          if [ -f "$report" ]; then
+            count=$(jq '[.dependencies[]?.vulnerabilities[]?.name] | unique | length' "$report")
+            echo "Distinct unsuppressed CVEs: $count"
+            echo "message=$count" >> "$GITHUB_OUTPUT"
+            if [ "$count" -gt 0 ]; then
+              echo "color=red" >> "$GITHUB_OUTPUT"
+              jq -r '.dependencies[]? | select(.vulnerabilities) | .fileName as $f | .vulnerabilities[] | "\($f): \(.name) (\(.severity))"' "$report"
+            else
+              echo "color=brightgreen" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "message=error" >> "$GITHUB_OUTPUT"
+            echo "color=lightgrey" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish badge
+        if: github.ref == 'refs/heads/master'
+        uses: ./.github/actions/publish-badge
+        with:
+          token: ${{ github.token }}
+          file: cve.json
+          label: Known CVEs
+          message: ${{ steps.cves.outputs.message }}
+          color: ${{ steps.cves.outputs.color }}
+
+      - name: Fail on CVEs or scan errors
+        if: steps.odc.outcome == 'failure'
+        run: exit 1
 
       # The report is the verifiable evidence behind the badge
       - name: Upload Dependency-Check report

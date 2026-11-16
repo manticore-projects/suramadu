@@ -5,8 +5,8 @@
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
-[![CodeQL](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/codeql.yml?branch=master&style=for-the-badge&logo=github&logoColor=white&label=CodeQL)](https://github.com/manticore-projects/suramadu/actions/workflows/codeql.yml)
-[![CVE Scan](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/dependency-check.yml?branch=master&style=for-the-badge&logo=owasp&logoColor=white&label=CVE%20Scan)](https://github.com/manticore-projects/suramadu/actions/workflows/dependency-check.yml)
+[![CodeQL Findings](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmanticore-projects%2Fsuramadu%2Fbadges%2Fcodeql.json&style=for-the-badge&logo=github&logoColor=white)](https://github.com/manticore-projects/suramadu/actions/workflows/codeql.yml)
+[![Known CVEs](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmanticore-projects%2Fsuramadu%2Fbadges%2Fcve.json&style=for-the-badge&logo=owasp&logoColor=white)](https://github.com/manticore-projects/suramadu/actions/workflows/dependency-check.yml)
 [![Version](https://img.shields.io/badge/Version-27.3-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
 [![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2027-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)

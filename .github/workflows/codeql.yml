@@ -134,21 +134,53 @@ jobs:
         with:
           category: "/language:${{ matrix.language }}"
 
-      # Badge gate: the README "CodeQL" badge is this workflow's status, so green must
-      # mean "zero open CodeQL findings on master". The analyze step above waits for
-      # SARIF processing before returning, so the alert list queried here already
-      # reflects this very scan. Alerts triaged in the Security tab (false positive /
-      # won't fix) are 'dismissed' and intentionally do not count as open.
-      - name: Fail if open CodeQL alerts exist on master
-        if: github.ref == 'refs/heads/master'
+  # Badge + gate: the README "CodeQL Findings" badge shows the open-alert count this job
+  # publishes, so the number is produced by the scan itself and every value ever shown is
+  # in the 'badges' branch history. The analyze jobs wait for SARIF processing before
+  # returning, so the alert list queried here already reflects this very scan. Alerts
+  # triaged in the Security tab (false positive / won't fix) are 'dismissed' and
+  # intentionally do not count as open. Any count above zero fails the workflow.
+  findings-badge:
+    name: Publish findings badge
+    needs: analyze
+    if: needs.analyze.result == 'success' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      security-events: read
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Count open CodeQL alerts on master
+        id: alerts
         env:
           GH_TOKEN: ${{ github.token }}
           ALERTS: repos/${{ github.repository }}/code-scanning/alerts?tool_name=CodeQL&ref=refs/heads/master&state=open&per_page=100
         run: |
           count=$(gh api --paginate "$ALERTS" --jq length | awk '{s+=$1} END {print s+0}')
           echo "Open CodeQL alerts on master: $count"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
           if [ "$count" -gt 0 ]; then
+            echo "color=red" >> "$GITHUB_OUTPUT"
             gh api --paginate "$ALERTS" --jq \
               '.[] | "#\(.number) \(.rule.id) \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line)"'
-            exit 1
+          else
+            echo "color=brightgreen" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Publish badge
+        uses: ./.github/actions/publish-badge
+        with:
+          token: ${{ github.token }}
+          file: codeql.json
+          label: CodeQL Findings
+          message: ${{ steps.alerts.outputs.count }}
+          color: ${{ steps.alerts.outputs.color }}
+
+      - name: Fail if open CodeQL alerts exist
+        if: steps.alerts.outputs.count != '0'
+        run: exit 1

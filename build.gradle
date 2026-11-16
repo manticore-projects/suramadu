@@ -30,11 +30,13 @@ dependencyCheck {
     scanConfigurations = ['runtimeClasspath']
     suppressionFile = rootProject.file('config/dependency-check/suppressions.xml').absolutePath
 
-    // Badge gate: the README "CVE Scan" badge is the dependency-check workflow's status,
-    // so green must mean "zero unsuppressed CVEs of any severity". False positives are
-    // triaged in config/dependency-check/suppressions.xml with review notes, never by
-    // raising this threshold.
+    // Badge gate: the README "Known CVEs" badge shows the count from the JSON report,
+    // published by the dependency-check workflow, and zero unsuppressed CVEs of any
+    // severity is enforced. False positives are triaged in
+    // config/dependency-check/suppressions.xml with review notes, never by raising
+    // this threshold.
     failBuildOnCVSS = 0
+    formats = ['HTML', 'JSON']
 
     // JavaScript: package-lock.json folders
     scanSet = [
