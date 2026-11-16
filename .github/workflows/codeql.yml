@@ -172,14 +172,40 @@ jobs:
             echo "color=brightgreen" >> "$GITHUB_OUTPUT"
           fi
 
+      # Writes a shields.io endpoint JSON (https://shields.io/badges/endpoint-badge) to
+      # the orphan 'badges' branch, where the README badge reads it. Uses git plumbing
+      # against the existing checkout, so no second clone and no touching the working
+      # tree; the push retries because the CVE workflow updates the same branch.
       - name: Publish badge
-        uses: ./.github/actions/publish-badge
-        with:
-          token: ${{ github.token }}
-          file: codeql.json
-          label: CodeQL Findings
-          message: ${{ steps.alerts.outputs.count }}
-          color: ${{ steps.alerts.outputs.color }}
+        env:
+          FILE: codeql.json
+          LABEL: CodeQL Findings
+          MESSAGE: ${{ steps.alerts.outputs.count }}
+          COLOR: ${{ steps.alerts.outputs.color }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          printf '{"schemaVersion": 1, "label": "%s", "message": "%s", "color": "%s"}\n' \
+            "$LABEL" "$MESSAGE" "$COLOR" > /tmp/badge.json
+          blob=$(git hash-object -w /tmp/badge.json)
+          for i in 1 2 3; do
+            if git fetch -q origin badges; then
+              base=$(git rev-parse FETCH_HEAD)
+              tree=$({ git ls-tree "$base" | awk -F'\t' -v f="$FILE" '$2 != f'
+                       printf '100644 blob %s\t%s\n' "$blob" "$FILE"; } | git mktree)
+              commit=$(git commit-tree "$tree" -p "$base" -m "badge: $FILE -> $MESSAGE")
+            else
+              tree=$(printf '100644 blob %s\t%s\n' "$blob" "$FILE" | git mktree)
+              commit=$(git commit-tree "$tree" -m "badge: $FILE -> $MESSAGE")
+            fi
+            git push -q origin "$commit:refs/heads/badges" && exit 0
+            sleep 3
+          done
+          echo "failed to push badge after 3 attempts" >&2
+          exit 1
 
       - name: Fail if open CodeQL alerts exist
         if: steps.alerts.outputs.count != '0'
