@@ -65,6 +65,15 @@ jobs:
             --exclude '**/proto/**' \
             --exclude '**/*.min.js'
 
+      # Semgrep writes nosemgrep-suppressed findings into the SARIF anyway (marked with
+      # "suppressions"), and the GitHub Security tab shows them as open alerts. Strip them
+      # before upload so inline nosemgrep annotations actually take effect.
+      - name: Drop nosemgrep-suppressed findings from SARIF
+        run: |
+          jq 'del(.runs[].results[] | select(.suppressions and (.suppressions | length > 0)))' \
+            semgrep-results.sarif > semgrep-results.filtered.sarif
+          mv semgrep-results.filtered.sarif semgrep-results.sarif
+
       - name: Upload SARIF to the GitHub Security tab
         uses: github/codeql-action/upload-sarif@9418214df1f2c4b8128c770156c409013b07d6b9 # v3.39.3
         with:
