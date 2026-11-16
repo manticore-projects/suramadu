@@ -73,12 +73,17 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      # --no-parallel overrides org.gradle.parallel=true from gradle.properties:
+      # dependencyCheckAggregate resolves the subprojects' runtimeClasspath from the root
+      # project at execution time, which Gradle rejects under parallel project execution
+      # ("Resolution of the configuration ... was attempted without an exclusive lock").
       - name: Run Dependency-Check
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           ./gradlew dependencyCheckAggregate \
             --no-daemon \
+            --no-parallel \
             --no-configuration-cache \
             -Porg.gradle.java.installations.fromEnv=JAVA_HOME_27_X64
 
