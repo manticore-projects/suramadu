@@ -1,31 +1,56 @@
 #!/bin/sh
 
 set -eu
-unset DISPLAY XAUTHORITY   # ensure no inherited X11 state leaks into child processes
+unset DISPLAY XAUTHORITY   # headless: no X11 needed; don't leak inherited state into child JVMs
 
 APP="Suramadu"
 WAR_PREFIX="suramadu-server"
 BASE="$(cd "$(dirname "$0")" && pwd -P)"
-CONFIG_DIR="${BASE}"                          # absolute: immune to caller's working directory
-JAVA_HOME="/usr/lib/jvm/default-runtime"
-java_bin="${JAVA_HOME}/bin/java"              # may be overridden by check_java if JAVA_HOME is absent
-LOGGING="-Djava.util.logging.config.file=${CONFIG_DIR}/logging.properties"
-MIN_JAVA_VERSION=21
+
+# Config directory (always absolute): ~/.manticore if it holds a Suramadu config
+# (legacy layout), otherwise the installation directory.
+CONFIG_DIR="${BASE}"
+if [ -f "${HOME}/.manticore/suramadu.config" ] || [ -f "${HOME}/.manticore/webswing.config" ]; then
+    CONFIG_DIR="${HOME}/.manticore"
+fi
+
+# JDK: first of bundled (next to the installation), distro default runtime, distro default.
+# If none exists, check_java falls back to whatever "java" is on PATH.
+JAVA_HOME=""
+for cand in "${BASE}/../java" /usr/lib/jvm/default-runtime /usr/lib/jvm/default; do
+    if [ -x "${cand}/bin/java" ]; then
+        JAVA_HOME="${cand}"
+        break
+    fi
+done
+JAVA_HOME="${JAVA_HOME:-${BASE}/../java}"
+java_bin="${JAVA_HOME}/bin/java"   # may be overridden by check_java
+
+# JUL config: next to the Suramadu config, else ~/.manticore; none = JDK defaults
+LOGGING=""
+for cand in "${CONFIG_DIR}/logging.properties" "${HOME}/.manticore/logging.properties"; do
+    if [ -f "${cand}" ]; then
+        LOGGING="-Djava.util.logging.config.file=${cand}"
+        break
+    fi
+done
+
+MIN_JAVA_VERSION=17
 PRELOAD="LD_PRELOAD=${BASE}/dist/ext-lib/libjemalloc.so.2"
 MALLOC_CONF="MALLOC_CONF=background_thread:true,metadata_thp:auto,dirty_decay_ms:5000,muzzy_decay_ms:5000,tcache_max:16384,narenas:4"
 
 # SSL certificates to import into the JVM truststore on startup.
 # Format: alias|host|port (one per line)
 # Add new certificates by appending lines.
-SSL_CERTS=""
-SSL_KEYSTORE="${JAVA_HOME}/lib/security/cacerts"
+SSL_CERTS="
+"
+# Empty = cacerts of the resolved JAVA_HOME (also valid after the system-java fallback)
+SSL_KEYSTORE=""
 SSL_KEYSTORE_PASS="changeit"
 
-# Server JVM flags — ZGC (generational, JDK 21+) for lowest GC latency
+# Server JVM flags (GC flags are added by check_java). -Xms is the floor idle uncommit can reach.
 JAVA_OPTS="\
- -server -Xmx2G -Xms256m -Xss228k \
- -XX:+UseZGC -XX:+ZGenerational \
- -XX:+AlwaysPreTouch \
+ -server -Xmx2G -Xms64m -Xss228k \
  -XX:+ExitOnOutOfMemoryError \
  -XX:+HeapDumpOnOutOfMemoryError \
  -XX:HeapDumpPath=${BASE}/logs/ \
@@ -49,38 +74,56 @@ JAVA_OPTS="\
  --add-opens=java.desktop/sun.awt.image=ALL-UNNAMED \
 "
 
+# Window theme. Set to "" for the neutral default theme.
+BRANDING_OPTS="\
+ -Dorg.webswing.window.theme.primaryColor=0xd70900 \
+ -Dorg.webswing.window.theme.secondaryColor=0xd70900 \
+ -Dorg.webswing.window.theme.contentBgColor=0xffffff \
+"
+
 # Prefer the current configuration file names; fall back to the legacy ones so that
 # installations created before the rename keep working untouched.
-CONFIG_FILE="$CONFIG_DIR/suramadu.config"
-[ -f "$CONFIG_FILE" ] || CONFIG_FILE="$CONFIG_DIR/webswing.config"
-PROPS_FILE="$CONFIG_DIR/suramadu.properties"
-[ -f "$PROPS_FILE" ] || PROPS_FILE="$CONFIG_DIR/webswing.properties"
+CONFIG_FILE="${CONFIG_DIR}/suramadu.config"
+[ -f "${CONFIG_FILE}" ] || CONFIG_FILE="${CONFIG_DIR}/webswing.config"
+PROPS_FILE="${CONFIG_DIR}/suramadu.properties"
+[ -f "${PROPS_FILE}" ] || PROPS_FILE="${CONFIG_DIR}/webswing.properties"
+JETTY_FILE="${CONFIG_DIR}/jetty.properties"
 
-SURAMADU_OPTS="-h 0.0.0.0 -j $CONFIG_DIR/jetty.properties -c $CONFIG_FILE -pf $PROPS_FILE"
+SURAMADU_OPTS="-h 0.0.0.0 -j ${JETTY_FILE} -c ${CONFIG_FILE} -pf ${PROPS_FILE}"
 NICE_LEVEL=10
 LOG_RETENTION_DAYS=10
 
 PID_FILE="${BASE}/logs/${APP}.pid"
 TAIL_PID_FILE="${BASE}/logs/${APP}-tail.pid"
 LOG_FILE="${BASE}/logs/${APP}.log"
+DETACH_LOG="${BASE}/logs/${APP}-restart.log"
 
 USAGE="$(basename "$0") -- Suramadu Server
 
 Usage:
     $(basename "$0") { start | stop | restart | status | list }
     $(basename "$0") -v VERSION { start | restart }
+    $(basename "$0") -d { stop | restart }
     $(basename "$0") -h | --help
 
 Options:
     -v VERSION    Use a specific WAR version (e.g. -v 26.0)
                   Default: auto-detect latest version
+    -d            Force detached mode for stop/restart (see below)
 
 Commands:
     start         Start the server
     stop          Stop the server
     restart       Stop + Start
     status        Check if the server is running
-    list          List all available WAR versions"
+    list          List all available WAR versions
+
+Detached mode:
+    stop/restart are automatically detached when invoked from inside a
+    ${APP} session (e.g. the Jediterm shell). The script re-launches itself
+    as an orphaned daemon with a clean environment, so it survives the
+    server going down. Your session WILL drop; reconnect after ~30-60 s.
+    Output goes to logs/${APP}-restart.log"
 
 # ── WAR Version Detection ───────────────────────────────────────────────
 
@@ -225,13 +268,25 @@ detect_distro() {
 }
 
 check_java() {
-    # Sets the global java_bin; cmd_start uses it so the fallback path is actually honoured.
+    # Sets the globals java_bin and (on fallback) JAVA_HOME; cmd_start and
+    # import_ssl_certs use them so the fallback is actually honoured.
+    # A detached child inherits the JDK already validated by its parent
+    # (its PATH is minimal, so re-resolving "java" could differ).
+    if [ -n "${SURAMADU_JAVA_HOME:-}" ] && [ -x "${SURAMADU_JAVA_HOME}/bin/java" ]; then
+        JAVA_HOME="${SURAMADU_JAVA_HOME}"
+    fi
     java_bin="${JAVA_HOME}/bin/java"
 
     if [ ! -x "${java_bin}" ]; then
         if command -v java > /dev/null 2>&1; then
-            java_bin="java"
-            echo "WARN: JAVA_HOME (${JAVA_HOME}) not found, using system java."
+            java_real=$(readlink -f "$(command -v java)" 2>/dev/null || true)
+            java_bin="${java_real:-$(command -v java)}"
+            echo "WARN: JAVA_HOME (${JAVA_HOME}) not found, using system java (${java_bin})."
+            # Derive the JDK home so keytool / cacerts resolve to the same install
+            fallback_home="${java_bin%/bin/java}"
+            if [ "${fallback_home}" != "${java_bin}" ] && [ -d "${fallback_home}" ]; then
+                JAVA_HOME="${fallback_home}"
+            fi
         else
             distro=$(detect_distro)
             echo "ERROR: Java not found."
@@ -262,7 +317,7 @@ check_java() {
         fi
     fi
 
-    java_version_output=$("${java_bin}" -version 2>&1 | head -1)
+    java_version_output=$("${java_bin}" -version 2>&1 | grep -m1 ' version "' || true)
     java_version=$(echo "${java_version_output}" | sed -n 's/.*version "\([0-9]*\).*/\1/p')
 
     if [ -z "${java_version}" ]; then
@@ -274,8 +329,47 @@ check_java() {
     else
         echo "Java ${java_version} detected."
     fi
+
+    # GC: Shenandoah (very low pauses, compressed oops, uncommits idle memory) where the
+    # JDK includes it (not in Oracle builds); otherwise G1, told to shrink the heap when idle.
+    # Single-generation Shenandoah on purpose: generational mode is not wanted yet.
+    if "${java_bin}" -XX:+UseShenandoahGC -version > /dev/null 2>&1; then
+        GC_OPTS="-XX:+UseShenandoahGC"
+    else
+        echo "WARN: this JDK has no Shenandoah, falling back to G1."
+        GC_OPTS="-XX:+UseG1GC -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30"
+    fi
+    FULL_OPTS="${JAVA_OPTS} ${GC_OPTS} ${BRANDING_OPTS}"
 }
 
+# Everything that can make a (re)start fail, checked BEFORE the running
+# instance is touched. Exits non-zero (and prints why) if the start would fail.
+preflight() {
+    check_java
+
+    if [ -n "${REQUESTED_VERSION}" ]; then
+        find_war_by_version "${REQUESTED_VERSION}" || exit 1
+    else
+        find_latest_war || exit 1
+    fi
+
+    # Dry-run the JVM with the exact start flags: catches options this JDK rejects.
+    # shellcheck disable=SC2086
+    if ! jvm_out=$("${java_bin}" ${FULL_OPTS} -version 2>&1); then
+        echo "ERROR: the JVM rejects its start options -- NOT touching the running instance."
+        echo "${jvm_out}" | sed 's/^/  /'
+        exit 1
+    fi
+
+    for f in "${CONFIG_FILE}" "${PROPS_FILE}" "${JETTY_FILE}"; do
+        [ -f "${f}" ] || echo "WARN: ${f} not found"
+    done
+
+    PREFLIGHT_DONE=1
+    if [ "${action}" = "restart" ]; then
+        echo "Preflight OK: $(basename "${WAR_FILE}"), ${java_bin}, GC: ${GC_OPTS:-JDK default}"
+    fi
+}
 
 import_ssl_certs() {
     if [ -z "${SSL_CERTS}" ]; then
@@ -288,6 +382,7 @@ import_ssl_certs() {
     fi
 
     keytool_bin="${JAVA_HOME}/bin/keytool"
+    ssl_keystore="${SSL_KEYSTORE:-${JAVA_HOME}/lib/security/cacerts}"
     if [ ! -x "${keytool_bin}" ]; then
         echo "WARN: keytool not found at ${keytool_bin}, skipping SSL certificate import."
         return 0
@@ -331,7 +426,7 @@ ${line}"
 
                     # Remove old entry (ignore errors if it doesn't exist)
                     "${keytool_bin}" -delete \
-                        -keystore "${SSL_KEYSTORE}" \
+                        -keystore "${ssl_keystore}" \
                         -storepass "${SSL_KEYSTORE_PASS}" \
                         -alias "${cert_alias}" 2>/dev/null || true
 
@@ -339,7 +434,7 @@ ${line}"
                     if "${keytool_bin}" -import -noprompt -trustcacerts \
                         -alias "${cert_alias}" \
                         -file "${cert_file}" \
-                        -keystore "${SSL_KEYSTORE}" \
+                        -keystore "${ssl_keystore}" \
                         -storepass "${SSL_KEYSTORE_PASS}" 2>/dev/null; then
                         echo "    Imported: ${cert_alias}"
                     else
@@ -364,22 +459,25 @@ ${line}"
     rm -rf "${tmp_cert_dir}"
 }
 
-# ── Suramadu server cert → CHILD app JVM truststore ──────────────────────
-# Exported from the server keystore and imported into the JDK that Suramadu
-# launches the Swing apps with (NOT necessarily $JAVA_HOME).
-APP_JDK_HOME="/home/manticore/jdk-25.0.3-lite"
+# ── Suramadu server cert → CHILD app JVM truststore (optional, per host) ─
+# Exports the listed aliases from the server keystore and imports them into the
+# truststore of the JDK Suramadu launches the Swing apps with (NOT necessarily
+# $JAVA_HOME). Disabled while SERVER_CERT_ALIASES is empty.
+APP_JDK_HOME=""             # e.g. /home/manticore/jdk-25.0.3-lite
 APP_TRUSTSTORE="${APP_JDK_HOME}/lib/security/cacerts"
 APP_TRUSTSTORE_PASS="changeit"
-KEYSTORE="/vboxapp/vbox/ssl/keystore.jks"
-KEYSTORE_PASS="restore@123"
-SERVER_CERT_ALIASES="fcmbroot"   # space-separated; add the leaf if it doesn't chain to root
+KEYSTORE=""                 # e.g. /vboxapp/vbox/ssl/keystore.jks
+KEYSTORE_PASS=""
+SERVER_CERT_ALIASES=""      # space-separated; add the leaf if it doesn't chain to root
 
 import_server_cert() {
+    [ -n "${SERVER_CERT_ALIASES}" ] || return 0
+
     keytool_bin="${JAVA_HOME}/bin/keytool"
     [ -x "${keytool_bin}" ] || keytool_bin="keytool"
 
-    [ -f "${KEYSTORE}" ]      || { echo "  WARN: ${KEYSTORE} missing, skip server-cert import"; return 0; }
-    [ -w "${APP_TRUSTSTORE}" ] || { echo "  WARN: ${APP_TRUSTSTORE} not writable, skip"; return 0; }
+    [ -f "${KEYSTORE}" ]       || { echo "  WARN: keystore '${KEYSTORE}' missing, skip server-cert import"; return 0; }
+    [ -w "${APP_TRUSTSTORE}" ] || { echo "  WARN: ${APP_TRUSTSTORE} not writable, skip server-cert import"; return 0; }
 
     tmp_dir=$(mktemp -d)
     for alias in ${SERVER_CERT_ALIASES}; do
@@ -455,6 +553,67 @@ detect_log_colorizer() {
     fi
 }
 
+# ── Self-Detach (restart from inside a running session) ──────────────────
+
+# True if this script runs as a descendant of the server JVM (PID_FILE),
+# i.e. from a Jediterm shell opened inside a Suramadu session.
+inside_server_tree() {
+    [ -f "${PID_FILE}" ] || return 1
+    srv=$(cat "${PID_FILE}" 2>/dev/null) || return 1
+    [ -n "${srv}" ] || return 1
+    p=$$
+    while [ -n "${p}" ] && [ "${p}" -gt 1 ] 2>/dev/null; do
+        [ "${p}" = "${srv}" ] && return 0
+        p=$(ps -o ppid= -p "${p}" 2>/dev/null | tr -d ' ')
+    done
+    return 1
+}
+
+# Re-launch this script fully detached from the current process tree:
+#   - double fork (subshell + background) -> orphaned, re-parented to init,
+#     so it is no longer a descendant that the server could tear down
+#   - setsid -> new session, no SIGHUP / process-group kill from the terminal
+#   - env -i -> clean environment; the Jediterm shell inherits the app JVM's
+#     environment (CLASSPATH, JAVA_TOOL_OPTIONS, ...) which must not leak
+#     into the new server JVM
+#   - stdin/stdout/stderr redirected, nothing references the dying terminal
+detach_self() {
+    mkdir -p "${BASE}/logs"
+    self="${BASE}/$(basename "$0")"
+
+    if [ -n "${REQUESTED_VERSION}" ]; then
+        set -- -v "${REQUESTED_VERSION}" "${action}"
+    else
+        set -- "${action}"
+    fi
+
+    runner=""
+    if command -v setsid > /dev/null 2>&1; then
+        runner="setsid"
+    fi
+
+    : > "${DETACH_LOG}"
+    (
+        trap '' HUP
+        # shellcheck disable=SC2086
+        ${runner} env -i \
+            HOME="${HOME}" \
+            USER="${USER:-$(id -un)}" \
+            LOGNAME="${USER:-$(id -un)}" \
+            PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+            LANG="${LANG:-C.UTF-8}" \
+            ${TZ:+TZ="${TZ}"} \
+            SURAMADU_DETACHED=1 \
+            SURAMADU_JAVA_HOME="${JAVA_HOME}" \
+            nohup sh "${self}" "$@" >> "${DETACH_LOG}" 2>&1 < /dev/null &
+    )
+
+    echo ""
+    echo "==== ${action} of ${APP} handed over to a detached process"
+    echo "  Log:  ${DETACH_LOG}"
+    echo "  This session will drop in ~2 s. Reconnect after 30-60 s."
+}
+
 # ── Commands ─────────────────────────────────────────────────────────────
 
 cmd_list() {
@@ -500,6 +659,7 @@ cmd_start() {
 
     check_java
     import_ssl_certs
+    import_server_cert
 
     # Resolve WAR file
     if [ -n "${REQUESTED_VERSION}" ]; then
@@ -516,17 +676,16 @@ cmd_start() {
 
     # Verify jemalloc is present; warn and skip LD_PRELOAD rather than silently misconfiguring
     if [ ! -f "${BASE}/dist/ext-lib/libjemalloc.so.2" ]; then
-        echo "WARN: libjemalloc.so.2 not found at ${BASE}/dist/ext-lib/ — starting without jemalloc"
-        cmd="${java_bin} ${JAVA_OPTS} ${LOGGING} -jar ${WAR_FILE} ${SURAMADU_OPTS}"
+        echo "WARN: libjemalloc.so.2 not found at ${BASE}/dist/ext-lib/ -- starting without jemalloc"
+        cmd="${java_bin} ${FULL_OPTS} ${LOGGING} -jar ${WAR_FILE} ${SURAMADU_OPTS}"
     else
-        cmd="${MALLOC_CONF} ${PRELOAD} ${java_bin} ${JAVA_OPTS} ${LOGGING} -jar ${WAR_FILE} ${SURAMADU_OPTS}"
+        cmd="${MALLOC_CONF} ${PRELOAD} ${java_bin} ${FULL_OPTS} ${LOGGING} -jar ${WAR_FILE} ${SURAMADU_OPTS}"
     fi
 
-    # Raise fd limit — Suramadu opens one fd per session plus Jetty workers;
-    # default 1024 is easily exhausted under real load
+    # Raise fd limit -- one fd per session plus Jetty workers; default 1024 is easily exhausted
     ulimit -n 65535 2>/dev/null || echo "WARN: Could not raise open file limit (ulimit -n 65535)"
 
-    # Prefer ionice + nice for both CPU and I/O scheduling; fall back to nice-only
+    # Prefer ionice + nice for CPU and I/O scheduling; fall back to nice-only
     if command -v ionice > /dev/null 2>&1; then
         launcher="ionice -c 2 -n 4 nice -n${NICE_LEVEL}"
     else
@@ -543,17 +702,20 @@ cmd_start() {
         echo "Started with PID [$(cat "${PID_FILE}")]"
         log_msg "${APP} v${WAR_VERSION} STARTED ($(basename "${WAR_FILE}"))"
 
-        kill_tail
-        colorizer=$(detect_log_colorizer)
-        if [ -n "${colorizer}" ]; then
-            # shellcheck disable=SC2086
-            tail -f "${LOG_FILE}" | ${colorizer} &
-            # Save the tail PID so kill_tail can stop it cleanly
-            tail_pid=$( jobs -l | awk '/tail -f/ { print $2 }' | tail -1 )
-            echo "${tail_pid:-$!}" > "${TAIL_PID_FILE}"
-        else
-            tail -f "${LOG_FILE}" &
-            echo $! > "${TAIL_PID_FILE}"
+        # No terminal to tail into when running detached
+        if [ "${SURAMADU_DETACHED:-0}" != "1" ]; then
+            kill_tail
+            colorizer=$(detect_log_colorizer)
+            if [ -n "${colorizer}" ]; then
+                # shellcheck disable=SC2086
+                tail -f "${LOG_FILE}" | ${colorizer} &
+                # Save the tail PID so kill_tail can stop it cleanly
+                tail_pid=$( jobs -l | awk '/tail -f/ { print $2 }' | tail -1 )
+                echo "${tail_pid:-$!}" > "${TAIL_PID_FILE}"
+            else
+                tail -f "${LOG_FILE}" &
+                echo $! > "${TAIL_PID_FILE}"
+            fi
         fi
     else
         echo "Error starting ${APP}"
@@ -593,6 +755,9 @@ cmd_stop() {
 }
 
 cmd_restart() {
+    # Never kill the old instance unless the new one can actually start
+    # (already done in main when not detached; a detached child does its own)
+    [ "${PREFLIGHT_DONE:-0}" = "1" ] || preflight
     cmd_stop
     echo "Sleeping..."
     sleep 3
@@ -603,6 +768,7 @@ cmd_restart() {
 
 REQUESTED_VERSION=""
 action=""
+DETACH=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -617,6 +783,9 @@ while [ $# -gt 0 ]; do
             fi
             REQUESTED_VERSION="$2"
             shift
+            ;;
+        -d|--detach)
+            DETACH=1
             ;;
         start|stop|restart|status|list)
             action="$1"
@@ -637,6 +806,21 @@ if [ -z "${action}" ]; then
 fi
 
 cd "${BASE}"
+
+case "${action}" in
+    stop|restart)
+        if [ "${action}" = "restart" ] && [ "${SURAMADU_DETACHED:-0}" != "1" ]; then
+            preflight
+        fi
+        if [ "${SURAMADU_DETACHED:-0}" = "1" ]; then
+            # Detached child: give the launching session time to print and exit
+            sleep 2
+        elif [ "${DETACH}" -eq 1 ] || inside_server_tree; then
+            detach_self
+            exit 0
+        fi
+        ;;
+esac
 
 case "${action}" in
     list)    cmd_list    ;;
