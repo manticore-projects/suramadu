@@ -418,6 +418,10 @@ public class DirectDrawUtils {
   }
 
   public static String fontNameFromFile(String fileName, Font font) {
+    if (WebFontRegistry.isKey(fileName)) {
+      // registered by the application: always shipped by DirectDraw, never "provided"
+      return WebFontRegistry.familyFor(fileName);
+    }
     if (fileName != null) {
       File f = new File(fileName);
       if (f.exists()) {

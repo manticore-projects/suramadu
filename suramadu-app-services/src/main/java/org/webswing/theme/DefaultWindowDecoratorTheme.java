@@ -35,13 +35,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <h3>Configuration</h3> Every key is resolved, first hit wins:
  * <ol>
+ * <li>JVM system property (the deployment's {@code jvmArgs}) — explicit configuration always wins,
+ * so existing installations look unchanged,</li>
  * <li>{@code UIManager} value of the same key (e.g. from a FlatLaf theme {@code .properties} —
  * follows look-and-feel / dark-mode switches),</li>
  * <li>host property set at runtime via {@link WebswingApi#setProperties(java.util.Map)},</li>
- * <li>JVM system property (app {@code jvmArgs}),</li>
  * <li>hardcoded Manticore brand default.</li>
  * </ol>
- * Colours and title font are <b>live</b>: re-resolved and repainted on look-and-feel change,
+ * {@code UIManager} is not touched before the first paint, so the decorator never initialises the
+ * look-and-feel ahead of the application (e.g. before it sets {@code swing.defaultlaf}). Colours
+ * and title font are <b>live</b>: re-resolved and repainted on look-and-feel change,
  * {@code UIManager.put} of a theme key, or a runtime host-property change. Geometry
  * ({@code titleHeight}, {@code borderWidth}) is <b>startup-only</b> — it is read when the decorator
  * is created (it changes window insets) and is not taken from {@code UIManager}.
@@ -132,24 +135,25 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
 
     this.insets = new Insets(titleHeight, chromeMargin, chromeMargin, chromeMargin);
 
-    installListeners();
-    Palette p = palette();
-
-    // Startup log so configuration is verifiable. If values aren't what you configured, check
-    // the theme .properties / API call, or for jvmArgs an unquoted '#' read as a shell comment.
+    // Colours are resolved lazily on first paint (UIManager must not be touched this early); they
+    // are logged then. If values aren't what you configured, check jvmArgs (an unquoted '#' is read
+    // as a shell comment), the theme .properties or the API call.
     System.out.println("DefaultWindowDecoratorTheme:" + " titleHeight=" + titleHeight
-        + " borderWidth=" + borderWidth + " chromeMargin=" + chromeMargin + " " + describe(p));
+        + " borderWidth=" + borderWidth + " chromeMargin=" + chromeMargin);
   }
 
   // =========================================================================
   // Live palette resolution
   // =========================================================================
 
+  /** First call happens on paint, i.e. after the application has set up its look-and-feel. */
   private static Palette palette() {
     Palette p = palette;
     if (p == null) {
+      installListeners();
       p = resolvePalette();
       palette = p;
+      System.out.println("DefaultWindowDecoratorTheme: " + describe(p));
     }
     return p;
   }
@@ -231,18 +235,25 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
     }
   }
 
-  /** Host property (runtime overlay, then sysprop); plain sysprop when the API is unavailable. */
+  /** Host property: sysprop (jvmArgs) first, then runtime value; plain sysprop without the API. */
   private static String property(String key) {
     WebswingApi api = api();
     return api != null ? api.getProperty(key) : System.getProperty(key);
   }
 
   private static Color resolveColor(String key, Color fallback) {
-    Object ui = UIManager.get(key);
-    if (ui instanceof Color c) {
-      return new Color(c.getRed(), c.getGreen(), c.getBlue(), c.getAlpha()); // drop UIResource
+    // 1. jvmArgs — explicit deployment configuration always wins (backward compatibility)
+    Color c = decodeOrNull(key, System.getProperty(key));
+    if (c != null) {
+      return c;
     }
-    Color c = ui instanceof String s ? decodeOrNull(key, s) : null;
+    // 2. UIManager (theme .properties)
+    Object ui = UIManager.get(key);
+    if (ui instanceof Color uc) {
+      return new Color(uc.getRed(), uc.getGreen(), uc.getBlue(), uc.getAlpha()); // drop UIResource
+    }
+    c = ui instanceof String s ? decodeOrNull(key, s) : null;
+    // 3. runtime host property
     if (c == null) {
       c = decodeOrNull(key, property(key));
     }
@@ -250,11 +261,13 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
   }
 
   private static Font resolveTitleFont() {
-    Object ui = UIManager.get(PROP_TITLE_FONT);
+    String sys = System.getProperty(PROP_TITLE_FONT);
+    Object ui = sys != null && !sys.isBlank() ? null : UIManager.get(PROP_TITLE_FONT);
     if (ui instanceof Font f) {
       return new Font(f.getAttributes()); // drop UIResource
     }
-    String name = ui instanceof String s ? s : property(PROP_TITLE_FONT);
+    String name = sys != null && !sys.isBlank() ? sys
+        : ui instanceof String s ? s : property(PROP_TITLE_FONT);
     if (name != null && !name.isBlank()) {
       String n = name.trim();
       // "Face-STYLE-size" (java.awt.Font.decode form) carries style and size; a bare face name

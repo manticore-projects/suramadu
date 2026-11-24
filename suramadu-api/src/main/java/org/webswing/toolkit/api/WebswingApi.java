@@ -45,7 +45,7 @@ public interface WebswingApi {
 
   /**
    * Check if connected web session user has role defined. If no user is connected null is returned.
-   *
+   * 
    * @param role name of role
    * @return True if user has the role, false if not. Null if no user is connected
    * @throws WebswingApiException if communication with server fails.
@@ -55,7 +55,7 @@ public interface WebswingApi {
   /**
    * Check if connected web session user has permission defined. If no user is connected null is
    * returned.
-   *
+   * 
    * @param permission name of permission
    * @return True if user has the permission, false if not. Null if no user is connected
    * @throws WebswingApiException if communication with server fails.
@@ -65,14 +65,14 @@ public interface WebswingApi {
   /**
    * Add listener to receive notifications when user (primary/mirror view) connects or disconnects
    * from session
-   *
+   * 
    * @param listener listener to add
    */
   public void addUserConnectionListener(WebswingUserListener listener);
 
   /**
    * Remove user listener
-   *
+   * 
    * @param listener listener to remove
    */
   public void removeUserConnectionListener(WebswingUserListener listener);
@@ -94,14 +94,14 @@ public interface WebswingApi {
    * to all windows). Otherwise listeners are fired. It is expected the result of listener execution
    * will exit the swing process. Otherwise the swing process will be forcefully terminated after
    * defined timeout (system property "webswing.waitForExit", default: 30000)
-   *
+   * 
    * @param listener listener to add
    */
   public void addShutdownListener(WebswingShutdownListener listener);
 
   /**
    * Remove shutdown listener
-   *
+   * 
    * @param listener listener to remove
    */
   public void removeShutdownListener(WebswingShutdownListener listener);
@@ -188,7 +188,7 @@ public interface WebswingApi {
    * the content to local clipboard. <br>
    * Typically used for customized clipboard integration, while the built-in integration is disabled
    * in configuration ("allowLocalClipboard" is false).
-   *
+   * 
    * @param content clipboard data to be sent to browser
    */
   public void sendClipboard(WebswingClipboardData content);
@@ -204,21 +204,21 @@ public interface WebswingApi {
 
   /**
    * Adds a WebswingBrowserActionListener to listen to javascript browser initiated events.
-   *
+   * 
    * @param listener The listener to add
    */
   public void addBrowserActionListener(WebActionListener listener);
 
   /**
    * Removed a WebswingBrowserActionListener.
-   *
+   * 
    * @param listener The listener to remove
    */
   public void removeBrowserActionListener(WebActionListener listener);
 
   /**
    * Sends an action event with optional data to the browser.
-   *
+   * 
    * @param actionName name of action to be sent
    * @param data string encoded data
    * @param binaryData binary data
@@ -227,7 +227,7 @@ public interface WebswingApi {
 
   /**
    * Sends an action event to a WebWindow, with optional data to the browser.
-   *
+   * 
    * @param webWindow window to recieve the action
    * @param actionName name of action to be sent
    * @param data string encoded data
@@ -238,7 +238,7 @@ public interface WebswingApi {
 
   /**
    * Creates an HtmlPanel component. Compositing window manager must be enabled in config.
-   *
+   * 
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public HtmlPanel createHtmlPanel();
@@ -248,7 +248,7 @@ public interface WebswingApi {
    * Use this method to create an HtmlPanel inside a WebContainer parent container. This is required
    * for web container to correctly compute z-order of its child component canvases. Compositing
    * window manager must be enabled in config.
-   *
+   * 
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public HtmlPanel createHtmlPanelForWebContainerComponent(Container webContainer,
@@ -257,7 +257,7 @@ public interface WebswingApi {
   /**
    * Registers given container to be a parent web container and all of its child components will be
    * rendered into separate canvases. Compositing window manager must be enabled in config.
-   *
+   * 
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public void registerWebContainer(Container container);
@@ -276,7 +276,7 @@ public interface WebswingApi {
   /**
    * Toggle the dock state of a window. Compositing window manager must be enabled in config. Window
    * must be allowed to change the dock state according to config.
-   *
+   * 
    * @throws IllegalArgumentException if isCompositingWindowManager() or isDockingEnabled(window)
    *         returns false
    */
@@ -285,7 +285,7 @@ public interface WebswingApi {
   /**
    * Toggle the dock state of a window. Compositing window manager must be enabled in config. Window
    * must be allowed to change the dock state according to config.
-   *
+   * 
    * @throws IllegalArgumentException if isCompositingWindowManager() or isDockingEnabled(window)
    *         returns false
    */
@@ -294,7 +294,7 @@ public interface WebswingApi {
   /**
    * Check whether window is in undocked state. Compositing window manager must be enabled in
    * config.
-   *
+   * 
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public boolean isUndocked(Window window);
@@ -308,7 +308,7 @@ public interface WebswingApi {
   /**
    * Register JFileChooser that should show Webswing integration toolbar if embedded in custom
    * window. Transparent mode is not available in case of custom window.
-   *
+   * 
    * @param fileChooser instance of file chooser
    * @param parent custom window that contains this filechooser
    */
@@ -319,17 +319,20 @@ public interface WebswingApi {
   // ===========================================================================
   //
   // Signatures use JDK types only, so applications can call these reflectively without a
-  // compile-time dependency on this API.
+  // compile-time dependency on this API. Methods added after the WebSwing 20.2.5 API are default
+  // methods, so existing implementations (e.g. test doubles) keep compiling.
 
   /**
-   * Returns a host property: the value set at runtime through {@link #setProperties(Map)} if any,
-   * otherwise the JVM system property of the same key (typically from the application's
-   * {@code jvmArgs}).
+   * Returns a host property: the JVM system property of the key if set (the deployment's
+   * {@code jvmArgs} — explicit configuration always wins), otherwise the value set at runtime
+   * through {@link #setProperties(Map)}.
    *
    * @param key property key, e.g. {@code org.webswing.window.theme.primaryColor}
-   * @return the value, or {@code null} when neither a runtime value nor a system property exists
+   * @return the value, or {@code null} when neither a system property nor a runtime value exists
    */
-  public String getProperty(String key);
+  public default String getProperty(String key) {
+    return key == null ? null : System.getProperty(key);
+  }
 
   /**
    * Sets or clears host properties at runtime. A {@code null} value removes the runtime value, so
@@ -342,13 +345,17 @@ public interface WebswingApi {
    *
    * <p>
    * Runtime values live in an overlay and are <b>not</b> written to {@link System#getProperties()}.
-   * A key only takes effect where its consumer reads it through {@link #getProperty(String)}:
-   * immediately for consumers listening on it, otherwise the next time the consumer reads it. A key
-   * no listener covers is logged as a warning.
+   * A key set as system property ({@code jvmArgs}) stays fixed: the runtime value is kept but not
+   * effective, so existing deployments are unaffected. A key only takes effect where its consumer
+   * reads it through {@link #getProperty(String)}: immediately for consumers listening on it,
+   * otherwise the next time the consumer reads it. A key no listener covers is logged as a warning.
    *
    * @param properties key/value pairs; {@code null} values allowed
+   * @throws UnsupportedOperationException if the implementation does not support runtime properties
    */
-  public void setProperties(Map<String, String> properties);
+  public default void setProperties(Map<String, String> properties) {
+    throw new UnsupportedOperationException("setProperties");
+  }
 
   /**
    * Convenience for setting a single host property. See {@link #setProperties(Map)}.
@@ -369,7 +376,9 @@ public interface WebswingApi {
    * @param keyPrefix key prefix, e.g. {@code org.webswing.window.theme.}
    * @param listener listener receiving one event per changed key
    */
-  public void addPropertyChangeListener(String keyPrefix, PropertyChangeListener listener);
+  public default void addPropertyChangeListener(String keyPrefix, PropertyChangeListener listener) {
+    // no runtime properties in this implementation: nothing will ever change
+  }
 
   /**
    * Removes a listener registered with
@@ -378,7 +387,34 @@ public interface WebswingApi {
    * @param keyPrefix key prefix used at registration
    * @param listener listener to remove
    */
-  public void removePropertyChangeListener(String keyPrefix, PropertyChangeListener listener);
+  public default void removePropertyChangeListener(String keyPrefix,
+      PropertyChangeListener listener) {
+    // see addPropertyChangeListener
+  }
+
+  // ===========================================================================
+  // Web fonts
+  // ===========================================================================
+
+  /**
+   * Registers a TrueType font so DirectDraw renders text in it natively in the browser, without a
+   * {@code fontConfig} entry and without glyph fallback. Typically called with the same bytes the
+   * application passes to {@link Font#createFont(int, java.io.InputStream)} and
+   * {@link java.awt.GraphicsEnvironment#registerFont(Font)}; register before the font is first
+   * painted. Idempotent for identical bytes.
+   *
+   * <p>
+   * The font is identified by its content and its face name as parsed from these bytes, so a
+   * mismatch between configured and actual font names cannot occur. Registered fonts are shipped to
+   * the browser, so only register fonts whose licence permits that.
+   *
+   * @param ttf TrueType font file content
+   * @return the registered face name, or {@code null} if the bytes are not a readable TrueType font
+   *         or the implementation does not support web fonts
+   */
+  public default String registerWebFont(byte[] ttf) {
+    return null;
+  }
 
   // ===========================================================================
   // Window theme — typed convenience over the host properties
@@ -403,14 +439,15 @@ public interface WebswingApi {
 
   /**
    * Sets the window-decoration theme at runtime in one batch; open windows repaint immediately. A
-   * {@code null} argument resets that value to its {@code jvmArgs} value or built-in default.
-   * Geometry is startup-only and not part of this call (use {@link #setProperties(Map)} with
-   * {@link #WINDOW_THEME_TITLE_HEIGHT} / {@link #WINDOW_THEME_BORDER_WIDTH} before the first
-   * window, or {@code jvmArgs}).
+   * {@code null} argument resets that value to the built-in default. A value configured as system
+   * property ({@code jvmArgs}) keeps precedence, so existing deployments look unchanged until their
+   * {@code jvmArgs} are removed. Geometry is startup-only and not part of this call (use
+   * {@link #setProperties(Map)} with {@link #WINDOW_THEME_TITLE_HEIGHT} /
+   * {@link #WINDOW_THEME_BORDER_WIDTH} before the first window, or {@code jvmArgs}).
    *
    * <p>
    * A value present in {@code UIManager} under the same key (e.g. from a FlatLaf theme
-   * {@code .properties}) takes precedence over this call.
+   * {@code .properties}) also takes precedence over this call.
    *
    * @param primary active title bar colour
    * @param secondary inactive title bar colour

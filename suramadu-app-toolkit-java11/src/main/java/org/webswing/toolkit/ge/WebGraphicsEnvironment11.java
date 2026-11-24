@@ -16,6 +16,10 @@ public class WebGraphicsEnvironment11 extends WebGraphicsEnvironment {
     // JNI directly, with no X11 dependency.
     System.setProperty("sun.font.fontmanager", WebFontManager.class.getName());
 
+    // No fontConfig from the deployment? Use the fonts the application ships
+    // (META-INF/webfonts.properties). Must run here, before the font manager exists.
+    AppFontConfiguration.install();
+
     if (hasFontConfiguration()) {
       System.setProperty("sun.awt.fontconfig",
           System.getProperty(Constants.SWING_START_SYS_PROP_FONT_CONFIG));

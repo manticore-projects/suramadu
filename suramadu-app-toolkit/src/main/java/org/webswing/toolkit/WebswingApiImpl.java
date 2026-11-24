@@ -628,13 +628,18 @@ public class WebswingApiImpl implements WebswingApi {
   // Host properties
   // ===========================================================================
 
+  /**
+   * Explicit JVM system properties (the deployment's {@code jvmArgs}) win over runtime values, so
+   * an existing installation keeps its configured behaviour when the application starts setting
+   * properties itself.
+   */
   @Override
   public String getProperty(String key) {
     if (key == null) {
       return null;
     }
-    String v = propertyOverrides.get(key);
-    return v != null ? v : System.getProperty(key);
+    String sys = System.getProperty(key);
+    return sys != null ? sys : propertyOverrides.get(key);
   }
 
   @Override
@@ -649,6 +654,10 @@ public class WebswingApiImpl implements WebswingApi {
         String key = e.getKey();
         if (key == null || key.isBlank()) {
           continue;
+        }
+        if (System.getProperty(key) != null) {
+          AppLogger.info("Host property '" + key
+              + "' is fixed by a system property (jvmArgs); the runtime value is stored but not effective.");
         }
         String oldValue = getProperty(key);
         if (e.getValue() == null) {
@@ -693,6 +702,33 @@ public class WebswingApiImpl implements WebswingApi {
     if (listener != null) {
       propertyListeners.remove(new PrefixListener(keyPrefix == null ? "" : keyPrefix, listener));
     }
+  }
+
+  // ===========================================================================
+  // Web fonts
+  // ===========================================================================
+
+  /** DirectDraw's font registry, resolved by name: this module has no compile dependency on it. */
+  private static final String WEB_FONT_REGISTRY = "org.webswing.directdraw.util.WebFontRegistry";
+  private static volatile java.lang.reflect.Method webFontRegister;
+
+  @Override
+  public String registerWebFont(byte[] ttf) {
+    try {
+      java.lang.reflect.Method m = webFontRegister;
+      if (m == null) {
+        m = Class.forName(WEB_FONT_REGISTRY).getMethod("register", byte[].class);
+        webFontRegister = m;
+      }
+      return (String) m.invoke(null, (Object) ttf);
+    } catch (ClassNotFoundException | NoSuchMethodException e) {
+      AppLogger.warn("Web font registration unavailable (DirectDraw not on the classpath).", e);
+    } catch (java.lang.reflect.InvocationTargetException e) {
+      AppLogger.error("Web font registration failed.", e.getCause());
+    } catch (IllegalAccessException e) {
+      AppLogger.error("Web font registration not accessible.", e);
+    }
+    return null;
   }
 
   public class WebswingUrlStateChangeEventImpl implements WebswingUrlStateChangeEvent {

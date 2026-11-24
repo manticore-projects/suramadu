@@ -48,10 +48,31 @@ The complete corresponding source for every released version is in this reposito
 
 ## What's New
 
-### Runtime Window Theming & Host Properties (27.4)
+### Runtime Window Theming, Web Fonts & Host Properties (27.4)
 
-The application can now configure Suramadu from its own code at runtime, no `jvmArgs` needed.
+The application can now configure Suramadu from its own code at runtime, no `jvmArgs` or
+`fontConfig` needed.
 
+- **Web fonts from the application.** `registerWebFont(byte[] ttf)` hands a TrueType font to
+  DirectDraw, which then renders its text natively in the browser instead of as glyph images.
+  Fonts are identified by content hash and by the face name parsed from the same bytes the
+  application renders with, so configured and actual font names can no longer disagree. Fonts
+  neither registered nor configured are logged once, with the list of registered faces.
+- **Fonts shipped by the application.** An application can include
+  `META-INF/webfonts.properties` mapping Java's logical fonts (and further faces) to TTFs inside
+  its own jar. When the deployment has no `fontConfig`, Suramadu reads this file at JVM start and
+  builds the font configuration from it, so neither font files nor font settings are needed on the
+  host. Any `fontConfig` the deployment does define takes precedence.
+
+  ```properties
+  dialog      = com/example/fonts/Roboto-Regular.ttf
+  dialog.bold = com/example/fonts/Roboto-Bold.ttf
+  monospaced  = com/example/fonts/RobotoMono-Regular.ttf
+  font.medium = com/example/fonts/Roboto-Medium.ttf
+  ```
+- **Reliable font loading in the browser.** Font faces load through the FontFace API and a frame
+  is drawn only once its fonts have loaded (5 s safety limit). Previously a 100 ms poll let early
+  frames render in a fallback font.
 - **Window theme.** `setWindowTheme(primary, secondary, accent, contentBg, titleFont)` themes the
   window decorations in one call. Open windows repaint at once, and `null` resets a value.
 - **Generic host properties.** `getProperty`, `setProperties(Map)` and
@@ -59,14 +80,18 @@ The application can now configure Suramadu from its own code at runtime, no `jvm
   top of the system properties; keys no listener covers are logged.
 - **Theme-driven.** Decoration colours and the title font also follow the look-and-feel: put the
   same keys into a FlatLaf theme `.properties` and dark-mode switches restyle the title bars.
-- Lookup order: `UIManager` → runtime value → `-D` system property → built-in default.
+- Lookup order: `-D` system property → `UIManager` → runtime value → built-in default.
   `titleHeight` and `borderWidth` are read once at startup.
+- **Fully backward compatible.** Existing `jvmArgs` and `fontConfig` keep working and keep
+  precedence, so installations look and behave as before until their configuration is removed.
+  Applications written for WebSwing 20.2.5 need no change; the new API methods are default methods.
 
 ```java
 WebswingApi api = WebswingUtil.getWebswingApi();   // null outside Suramadu
 if (api != null) {
     api.setWindowTheme(navy, gray, orange, panelBg, titleFont);
     api.setProperty(WebswingApi.WINDOW_THEME_TITLE_HEIGHT, "24");  // before the first window
+    api.registerWebFont(ttfBytes);                                  // before first paint
 }
 ```
 

@@ -4,6 +4,7 @@ import org.webswing.directdraw.DirectDraw;
 import org.webswing.directdraw.proto.Directdraw.FontProto;
 import org.webswing.directdraw.proto.Directdraw.FontProto.StyleProto;
 import org.webswing.directdraw.util.DirectDrawUtils;
+import org.webswing.directdraw.util.WebFontRegistry;
 
 import java.awt.Font;
 
@@ -23,7 +24,9 @@ public class FontConst extends ImmutableDrawConstantHolder<Font> {
     FontProto.Builder model = FontProto.newBuilder();
     String fileName = getContext().getServices().getFileForFont(getValue());
     model.setFamily(DirectDrawUtils.fontNameFromFile(fileName, getValue()));
-    model.setFontProvided(Boolean.getBoolean(DirectDraw.FONTS_PROVIDED));
+    // registry fonts are always shipped as font faces, even when fontConfig fonts are "provided"
+    model.setFontProvided(
+        Boolean.getBoolean(DirectDraw.FONTS_PROVIDED) && !WebFontRegistry.isKey(fileName));
     model.setSize(value.getSize());
     model.setStyle(StyleProto.valueOf(value.getStyle()));
     if (value.isTransformed()) {

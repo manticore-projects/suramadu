@@ -2,7 +2,9 @@ package org.webswing.directdraw;
 
 import com.manticore.tools.ZPNG;
 import org.apache.commons.codec.binary.Base64;
+import org.webswing.directdraw.util.DirectDrawUtils;
 import org.webswing.directdraw.util.ImageConsumerAdapter;
+import org.webswing.directdraw.util.WebFontRegistry;
 
 import javax.imageio.ImageIO;
 import java.awt.Font;
@@ -110,11 +112,25 @@ public class DirectDrawServicesAdapter {
   }
 
 
+  /**
+   * Resolves the font file DirectDraw sends to the browser. Fonts registered by the application
+   * ({@link WebFontRegistry}) win over the {@code fontConfig} mapping; a physical font found in
+   * neither is reported once and rendered as glyphs.
+   *
+   * @return a file path, a {@link WebFontRegistry} key, or {@code null}
+   */
   public String getFileForFont(Font font) {
     if (font != null) {
+      String key = WebFontRegistry.keyFor(font);
+      if (key != null) {
+        return key;
+      }
       Map<String, String> map = getFontFileMap();
       String fontName = font.getFontName().toLowerCase();
       String file = map.get(fontName);
+      if (file == null && !DirectDrawUtils.WEB_FONTS.containsKey(font.getFamily())) {
+        WebFontRegistry.reportUnresolved(font);
+      }
       return file;
     }
     return null;

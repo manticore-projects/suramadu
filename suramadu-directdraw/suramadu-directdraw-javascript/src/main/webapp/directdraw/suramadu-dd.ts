@@ -153,32 +153,6 @@ export class DirectDraw {
         };
     }
 
-    public static isFontAvailable(fontName:string) {
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d")!;
-        const text = "abcdefghijklmnopqrstuvwxyz0123456789";
-        context.font = "72px monospace";
-        const baselineSize = context.measureText(text).width;
-        context.font = "72px '" + fontName + "', monospace";
-        const newSize = context.measureText(text).width;
-        if (newSize === baselineSize) {
-            return false;
-        } else {
-            return true;
-        }
-    }
-
-    public static getFontFaceData(name:string, font:Uint8Array, style:string) {
-        let fontFaceCss = "@font-face {";
-        fontFaceCss += "font-family: '" + name + "';";
-        fontFaceCss += "src: url(data:font/truetype;base64," + DirectDraw.toBase64(font) + ");";
-        if (style != null) {
-            fontFaceCss += "font-style: " + style + ";";
-        }
-        fontFaceCss += "}";
-        return fontFaceCss
-    }
-
     public static toBase64(data:Uint8Array) {
         let binary = '';
         const bytes = data;
@@ -273,6 +247,10 @@ export class DirectDraw {
 
     private constantPoolCache: IDrawConstantProto[] = [];
     private fontsArray: string[] = [];
+    /** FontFaces this context added to the document's FontFaceSet (removed on dispose). */
+    private fontFaces: FontFace[] = [];
+    /** Upper bound for waiting on one font face; a broken font must not stall rendering. */
+    private static readonly FONT_LOAD_TIMEOUT_MS = 5000;
     private canvasBuffer:HTMLCanvasElement[] = [];
     private xorLayer:HTMLCanvasElement=DirectDraw.newCanvas();
 
@@ -1104,47 +1082,22 @@ export class DirectDraw {
         });
     }
 
-    public initializeFontFaces(fontFaces: IFontFaceProto[]) {
-        if (typeof document === "undefined") {
-            // Worker: no DOM to inject @font-face CSS into — register through the
-            // FontFaceSet of the worker global scope instead (self.fonts). Same
-            // ctxId-prefixed family name as the DOM path, so iprtSetFont resolves it.
-            return this.initializeFontFacesWorker(fontFaces);
+    /**
+     * Registers the frame's font faces through the FontFace API and resolves only once every face
+     * has actually LOADED (or failed / timed out). Replaces the former @font-face CSS injection
+     * with base64 data URLs plus a 100 ms availability poll, which let frames render in a fallback
+     * font whenever decoding took longer than 100 ms. One code path for the page (document.fonts)
+     * and the worker (self.fonts); same ctxId-prefixed family name, so iprtSetFont resolves it.
+     */
+    public initializeFontFaces(fontFaces: IFontFaceProto[] | null | undefined): Promise<void> {
+        if (fontFaces == null || fontFaces.length === 0) {
+            return Promise.resolve();
         }
-        return new Promise<void>((resolve, reject) => {
-            try {
-                if (fontFaces.length > 0) {
-                    const loadedFonts = fontFaces.map((fontFace) => {
-                        return new Promise<void>((resolveFont) => {
-                            if (this.fontsArray.indexOf(fontFace.name) >= 0) {
-                                resolveFont();
-                            } else {
-                                this.fontsArray.push(fontFace.name);
-                                const fontCss = document.createElement("style");
-                                fontCss.type = "text/css";
-                                fontCss.setAttribute("data-dd-ctx", this.ctxId);
-                                const fontName = this.ctxId + fontFace.name;
-                                fontCss.innerHTML = DirectDraw.getFontFaceData(fontName, fontFace.font, fontFace.style!);
-                                document.body.appendChild(fontCss);
-                                this.waitForFont(fontName,resolveFont);
-                            }
-                        });
-                    });
-                    Promise.all(loadedFonts).then(() => {
-                        DirectDraw.clearMeasureCache();
-                        resolve();
-                    });
-                } else {
-                    resolve();
-                }
-            } catch (e) {
-                this.config.onErrorMessage(e as Error);
-                reject(e);
-            }
-        });
-    }
-
-    private initializeFontFacesWorker(fontFaces: IFontFaceProto[]): Promise<void> {
+        if (typeof FontFace === "undefined" && typeof document !== "undefined") {
+            return this.initializeFontFacesLegacy(fontFaces);
+        }
+        // tslint:disable-next-line:no-any
+        const fontSet: any = typeof document !== "undefined" ? document.fonts : (self as any).fonts;
         const loading: Array<Promise<void>> = [];
         for (const fontFace of fontFaces) {
             if (this.fontsArray.indexOf(fontFace.name) >= 0) {
@@ -1158,9 +1111,9 @@ export class DirectDraw {
                 const source = (fontFace.font as Uint8Array).slice().buffer;
                 const descriptors = fontFace.style != null && fontFace.style !== "" ? { style: fontFace.style } : undefined;
                 const face = new FontFace(fontName, source, descriptors);
-                // tslint:disable-next-line:no-any
-                (self as any).fonts.add(face);
-                loading.push(face.load().then(() => undefined, (e: Error) => this.config.onErrorMessage(e)));
+                fontSet.add(face);
+                this.fontFaces.push(face);
+                loading.push(this.loadWithTimeout(face, fontFace.name));
             } catch (e) {
                 this.config.onErrorMessage(e as Error);
             }
@@ -1173,23 +1126,89 @@ export class DirectDraw {
         });
     }
 
-    public dispose() {
-        if (typeof document === "undefined") {
-            // Worker: fonts live in self.fonts; the worker is terminated on reset,
-            // so there is nothing to unregister here.
-            this.fontsArray = [];
-            return;
+    /**
+     * Fallback for engines without the CSS Font Loading API: @font-face rules with base64 data
+     * URLs, as before 27.4, but waiting up to FONT_LOAD_TIMEOUT_MS (measured by text width)
+     * instead of the former 100 ms.
+     */
+    private initializeFontFacesLegacy(fontFaces: IFontFaceProto[]): Promise<void> {
+        const loading: Array<Promise<void>> = [];
+        for (const fontFace of fontFaces) {
+            if (this.fontsArray.indexOf(fontFace.name) >= 0) {
+                continue;
+            }
+            this.fontsArray.push(fontFace.name);
+            const fontName = this.ctxId + fontFace.name;
+            const css = document.createElement("style");
+            css.type = "text/css";
+            css.setAttribute("data-dd-ctx", this.ctxId);
+            css.innerHTML = "@font-face {font-family: '" + fontName + "';"
+                + "src: url(data:font/truetype;base64," + DirectDraw.toBase64(fontFace.font as Uint8Array) + ");"
+                + (fontFace.style != null && fontFace.style !== "" ? "font-style: " + fontFace.style + ";" : "")
+                + "}";
+            document.body.appendChild(css);
+            loading.push(new Promise<void>((resolve) => {
+                const probe = document.createElement("canvas").getContext("2d")!;
+                const text = "abcdefghijklmnopqrstuvwxyz0123456789";
+                probe.font = "72px monospace";
+                const baseline = probe.measureText(text).width;
+                const start = Date.now();
+                const poll = () => {
+                    probe.font = "72px '" + fontName + "', monospace";
+                    if (probe.measureText(text).width !== baseline
+                        || Date.now() - start > DirectDraw.FONT_LOAD_TIMEOUT_MS) {
+                        resolve();
+                    } else {
+                        setTimeout(poll, 10);
+                    }
+                };
+                poll();
+            }));
         }
-        const styles = Array.from(document.body.getElementsByTagName("style"));
-        const toRemove = [];
-        for (const style of styles) {
-            if (style.getAttribute("data-dd-ctx") === this.ctxId) {
-                toRemove.push(style);
+        if (loading.length === 0) {
+            return Promise.resolve();
+        }
+        return Promise.all(loading).then(() => {
+            DirectDraw.clearMeasureCache();
+        });
+    }
+
+    /** Never rejects: a failed or stalled face is reported and rendering continues. */
+    private loadWithTimeout(face: FontFace, name: string): Promise<void> {
+        return new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+                this.config.onErrorMessage(new Error("DirectDraw: font face '" + name + "' did not load within "
+                    + DirectDraw.FONT_LOAD_TIMEOUT_MS + " ms; rendering continues with a fallback font"));
+                resolve();
+            }, DirectDraw.FONT_LOAD_TIMEOUT_MS);
+            face.load().then(() => {
+                clearTimeout(timer);
+                resolve();
+            }, (e: Error) => {
+                clearTimeout(timer);
+                this.config.onErrorMessage(e);
+                resolve();
+            });
+        });
+    }
+
+    public dispose() {
+        if (typeof document !== "undefined") {
+            // tslint:disable-next-line:no-any
+            const fontSet: any = document.fonts; // the project's DOM typings lack FontFaceSet.delete
+            for (const face of this.fontFaces) {
+                fontSet.delete(face);
+            }
+            // legacy path (no FontFace API): remove this context's @font-face rules
+            for (const style of Array.from(document.body.getElementsByTagName("style"))) {
+                if (style.getAttribute("data-dd-ctx") === this.ctxId) {
+                    document.body.removeChild(style);
+                }
             }
         }
-        toRemove.forEach( (element) =>{
-            document.body.removeChild(element);
-        });
+        // Worker: the worker is terminated on reset, which drops self.fonts with it.
+        this.fontFaces = [];
+        this.fontsArray = [];
     }
 
     public logRenderTime(startTime:number, webImage:WebImageProto) {
@@ -1204,19 +1223,6 @@ export class DirectDraw {
 
     public getConstantPoolCache() {
         return this.constantPoolCache;
-    }
-
-    private waitForFont(fontName:string,resolve: ()=>void){
-        const timeout = (ms:number)=> new Promise((r)=>setTimeout(r,ms));
-        const start = new Date().getTime();
-        const pollFont = () => {
-            if (DirectDraw.isFontAvailable(fontName) || new Date().getTime()-start > 100) {
-                resolve();
-            } else {
-                timeout(5).then(pollFont);
-            }
-        }
-        pollFont();
     }
 
     private drawWebImage(image: WebImageProto, targetCanvas?: HTMLCanvasElement): PromiseLike<HTMLCanvasElement> {
