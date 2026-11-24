@@ -14,8 +14,13 @@ import org.webswing.toolkit.api.url.WebswingUrlStateChangeListener;
 
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
+import java.awt.Color;
 import java.awt.Container;
+import java.awt.Font;
 import java.awt.Window;
+import java.beans.PropertyChangeListener;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Webswing API used by Swing application for easy integration.
@@ -40,7 +45,7 @@ public interface WebswingApi {
 
   /**
    * Check if connected web session user has role defined. If no user is connected null is returned.
-   * 
+   *
    * @param role name of role
    * @return True if user has the role, false if not. Null if no user is connected
    * @throws WebswingApiException if communication with server fails.
@@ -50,7 +55,7 @@ public interface WebswingApi {
   /**
    * Check if connected web session user has permission defined. If no user is connected null is
    * returned.
-   * 
+   *
    * @param permission name of permission
    * @return True if user has the permission, false if not. Null if no user is connected
    * @throws WebswingApiException if communication with server fails.
@@ -60,14 +65,14 @@ public interface WebswingApi {
   /**
    * Add listener to receive notifications when user (primary/mirror view) connects or disconnects
    * from session
-   * 
+   *
    * @param listener listener to add
    */
   public void addUserConnectionListener(WebswingUserListener listener);
 
   /**
    * Remove user listener
-   * 
+   *
    * @param listener listener to remove
    */
   public void removeUserConnectionListener(WebswingUserListener listener);
@@ -89,14 +94,14 @@ public interface WebswingApi {
    * to all windows). Otherwise listeners are fired. It is expected the result of listener execution
    * will exit the swing process. Otherwise the swing process will be forcefully terminated after
    * defined timeout (system property "webswing.waitForExit", default: 30000)
-   * 
+   *
    * @param listener listener to add
    */
   public void addShutdownListener(WebswingShutdownListener listener);
 
   /**
    * Remove shutdown listener
-   * 
+   *
    * @param listener listener to remove
    */
   public void removeShutdownListener(WebswingShutdownListener listener);
@@ -130,16 +135,15 @@ public interface WebswingApi {
   public WebswingUrlState getUrlState();
 
   /**
-   * Register a URL state change listener
-   * 
+   * Remove URL state change listener
+   *
    * @param listener the listener
    */
-
   public void removeUrlStateChangeListener(WebswingUrlStateChangeListener listener);
 
   /**
-   * Remove URL state change listener
-   * 
+   * Register a URL state change listener
+   *
    * @param listener the listener
    */
   public void addUrlStateChangeListener(WebswingUrlStateChangeListener listener);
@@ -184,7 +188,7 @@ public interface WebswingApi {
    * the content to local clipboard. <br>
    * Typically used for customized clipboard integration, while the built-in integration is disabled
    * in configuration ("allowLocalClipboard" is false).
-   * 
+   *
    * @param content clipboard data to be sent to browser
    */
   public void sendClipboard(WebswingClipboardData content);
@@ -200,21 +204,21 @@ public interface WebswingApi {
 
   /**
    * Adds a WebswingBrowserActionListener to listen to javascript browser initiated events.
-   * 
+   *
    * @param listener The listener to add
    */
   public void addBrowserActionListener(WebActionListener listener);
 
   /**
    * Removed a WebswingBrowserActionListener.
-   * 
+   *
    * @param listener The listener to remove
    */
   public void removeBrowserActionListener(WebActionListener listener);
 
   /**
    * Sends an action event with optional data to the browser.
-   * 
+   *
    * @param actionName name of action to be sent
    * @param data string encoded data
    * @param binaryData binary data
@@ -223,7 +227,7 @@ public interface WebswingApi {
 
   /**
    * Sends an action event to a WebWindow, with optional data to the browser.
-   * 
+   *
    * @param webWindow window to recieve the action
    * @param actionName name of action to be sent
    * @param data string encoded data
@@ -234,7 +238,7 @@ public interface WebswingApi {
 
   /**
    * Creates an HtmlPanel component. Compositing window manager must be enabled in config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public HtmlPanel createHtmlPanel();
@@ -244,7 +248,7 @@ public interface WebswingApi {
    * Use this method to create an HtmlPanel inside a WebContainer parent container. This is required
    * for web container to correctly compute z-order of its child component canvases. Compositing
    * window manager must be enabled in config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public HtmlPanel createHtmlPanelForWebContainerComponent(Container webContainer,
@@ -253,7 +257,7 @@ public interface WebswingApi {
   /**
    * Registers given container to be a parent web container and all of its child components will be
    * rendered into separate canvases. Compositing window manager must be enabled in config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public void registerWebContainer(Container container);
@@ -272,7 +276,7 @@ public interface WebswingApi {
   /**
    * Toggle the dock state of a window. Compositing window manager must be enabled in config. Window
    * must be allowed to change the dock state according to config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() or isDockingEnabled(window)
    *         returns false
    */
@@ -281,7 +285,7 @@ public interface WebswingApi {
   /**
    * Toggle the dock state of a window. Compositing window manager must be enabled in config. Window
    * must be allowed to change the dock state according to config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() or isDockingEnabled(window)
    *         returns false
    */
@@ -290,7 +294,7 @@ public interface WebswingApi {
   /**
    * Check whether window is in undocked state. Compositing window manager must be enabled in
    * config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public boolean isUndocked(Window window);
@@ -304,10 +308,142 @@ public interface WebswingApi {
   /**
    * Register JFileChooser that should show Webswing integration toolbar if embedded in custom
    * window. Transparent mode is not available in case of custom window.
-   * 
+   *
    * @param fileChooser instance of file chooser
    * @param parent custom window that contains this filechooser
    */
   public void registerCustomFileChooser(JFileChooser fileChooser, Window parent);
+
+  // ===========================================================================
+  // Host properties — generic runtime configuration of the application JVM side
+  // ===========================================================================
+  //
+  // Signatures use JDK types only, so applications can call these reflectively without a
+  // compile-time dependency on this API.
+
+  /**
+   * Returns a host property: the value set at runtime through {@link #setProperties(Map)} if any,
+   * otherwise the JVM system property of the same key (typically from the application's
+   * {@code jvmArgs}).
+   *
+   * @param key property key, e.g. {@code org.webswing.window.theme.primaryColor}
+   * @return the value, or {@code null} when neither a runtime value nor a system property exists
+   */
+  public String getProperty(String key);
+
+  /**
+   * Sets or clears host properties at runtime. A {@code null} value removes the runtime value, so
+   * the key falls back to its system property (or the consumer's built-in default).
+   *
+   * <p>
+   * All values are applied first; listeners registered through
+   * {@link #addPropertyChangeListener(String, PropertyChangeListener)} are then notified
+   * synchronously on the calling thread, once per key whose effective value changed.
+   *
+   * <p>
+   * Runtime values live in an overlay and are <b>not</b> written to {@link System#getProperties()}.
+   * A key only takes effect where its consumer reads it through {@link #getProperty(String)}:
+   * immediately for consumers listening on it, otherwise the next time the consumer reads it. A key
+   * no listener covers is logged as a warning.
+   *
+   * @param properties key/value pairs; {@code null} values allowed
+   */
+  public void setProperties(Map<String, String> properties);
+
+  /**
+   * Convenience for setting a single host property. See {@link #setProperties(Map)}.
+   *
+   * @param key property key
+   * @param value property value, or {@code null} to remove the runtime value
+   */
+  public default void setProperty(String key, String value) {
+    Map<String, String> m = new HashMap<>(1);
+    m.put(key, value);
+    setProperties(m);
+  }
+
+  /**
+   * Registers a listener for runtime changes of every host property whose key starts with
+   * {@code keyPrefix}. An empty prefix matches every key.
+   *
+   * @param keyPrefix key prefix, e.g. {@code org.webswing.window.theme.}
+   * @param listener listener receiving one event per changed key
+   */
+  public void addPropertyChangeListener(String keyPrefix, PropertyChangeListener listener);
+
+  /**
+   * Removes a listener registered with
+   * {@link #addPropertyChangeListener(String, PropertyChangeListener)} for the same prefix.
+   *
+   * @param keyPrefix key prefix used at registration
+   * @param listener listener to remove
+   */
+  public void removePropertyChangeListener(String keyPrefix, PropertyChangeListener listener);
+
+  // ===========================================================================
+  // Window theme — typed convenience over the host properties
+  // ===========================================================================
+
+  /** Key prefix of all window-decoration theme properties. */
+  public static final String WINDOW_THEME_PREFIX = "org.webswing.window.theme.";
+  /** Active title bar colour ({@code #rrggbb}). */
+  public static final String WINDOW_THEME_PRIMARY = WINDOW_THEME_PREFIX + "primaryColor";
+  /** Inactive title bar colour. */
+  public static final String WINDOW_THEME_SECONDARY = WINDOW_THEME_PREFIX + "secondaryColor";
+  /** Brand accent (hover). */
+  public static final String WINDOW_THEME_ACCENT = WINDOW_THEME_PREFIX + "accentColor";
+  /** Fill of the chrome margin, should match the content pane. */
+  public static final String WINDOW_THEME_CONTENT_BG = WINDOW_THEME_PREFIX + "contentBgColor";
+  /** Title font: {@code Face-STYLE-size} ({@link Font#decode(String)} form) or a bare face name. */
+  public static final String WINDOW_THEME_TITLE_FONT = WINDOW_THEME_PREFIX + "titleFont";
+  /** Title bar height in px — startup-only. */
+  public static final String WINDOW_THEME_TITLE_HEIGHT = WINDOW_THEME_PREFIX + "titleHeight";
+  /** Visible border width in px — startup-only. */
+  public static final String WINDOW_THEME_BORDER_WIDTH = WINDOW_THEME_PREFIX + "borderWidth";
+
+  /**
+   * Sets the window-decoration theme at runtime in one batch; open windows repaint immediately. A
+   * {@code null} argument resets that value to its {@code jvmArgs} value or built-in default.
+   * Geometry is startup-only and not part of this call (use {@link #setProperties(Map)} with
+   * {@link #WINDOW_THEME_TITLE_HEIGHT} / {@link #WINDOW_THEME_BORDER_WIDTH} before the first
+   * window, or {@code jvmArgs}).
+   *
+   * <p>
+   * A value present in {@code UIManager} under the same key (e.g. from a FlatLaf theme
+   * {@code .properties}) takes precedence over this call.
+   *
+   * @param primary active title bar colour
+   * @param secondary inactive title bar colour
+   * @param accent brand accent
+   * @param contentBg chrome margin fill
+   * @param titleFont title font (face, style and size are used)
+   */
+  public default void setWindowTheme(Color primary, Color secondary, Color accent, Color contentBg,
+      Font titleFont) {
+    Map<String, String> m = new HashMap<>(8);
+    m.put(WINDOW_THEME_PRIMARY, toHex(primary));
+    m.put(WINDOW_THEME_SECONDARY, toHex(secondary));
+    m.put(WINDOW_THEME_ACCENT, toHex(accent));
+    m.put(WINDOW_THEME_CONTENT_BG, toHex(contentBg));
+    m.put(WINDOW_THEME_TITLE_FONT, toFontSpec(titleFont));
+    setProperties(m);
+  }
+
+  private static String toHex(Color c) {
+    return c == null ? null : String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
+  }
+
+  private static String toFontSpec(Font f) {
+    if (f == null) {
+      return null;
+    }
+    String style = switch (f.getStyle()) {
+      case Font.BOLD -> "BOLD";
+      case Font.ITALIC -> "ITALIC";
+      case Font.BOLD | Font.ITALIC -> "BOLDITALIC";
+      default -> "PLAIN";
+    };
+    return f.getFontName() + "-" + style + "-" + f.getSize();
+  }
 
 }

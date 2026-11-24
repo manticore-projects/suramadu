@@ -1,13 +1,13 @@
 <div align="center">
 
-# Suramadu 27.3
+# Suramadu 27.4
 
 ### Swing in the Browser
 
 [![Build](https://img.shields.io/github/actions/workflow/status/manticore-projects/suramadu/Gradle.yml?branch=master&style=for-the-badge&logo=githubactions&logoColor=white&label=Build)](https://github.com/manticore-projects/suramadu/actions/workflows/Gradle.yml)
 [![CodeQL Findings](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmanticore-projects%2Fsuramadu%2Fbadges%2Fcodeql.json&style=for-the-badge&logo=github&logoColor=white)](https://github.com/manticore-projects/suramadu/actions/workflows/codeql.yml)
 [![Known CVEs](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmanticore-projects%2Fsuramadu%2Fbadges%2Fcve.json&style=for-the-badge&logo=owasp&logoColor=white)](https://github.com/manticore-projects/suramadu/actions/workflows/dependency-check.yml)
-[![Version](https://img.shields.io/badge/Version-27.3-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
+[![Version](https://img.shields.io/badge/Version-27.4-orange?style=for-the-badge)](https://github.com/manticore-projects/suramadu/releases)
 [![JDK 17+](https://img.shields.io/badge/JDK-17%2B%20%7C%2021%20%7C%2025%20%7C%2027-blue?style=for-the-badge&logo=openjdk&logoColor=white)](https://openjdk.org/)
 [![Node.js 24](https://img.shields.io/badge/Node.js-24%20LTS-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-red?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
@@ -47,6 +47,31 @@ The complete corresponding source for every released version is in this reposito
 ---
 
 ## What's New
+
+### Runtime Window Theming & Host Properties (27.4)
+
+The application can now configure Suramadu from its own code at runtime, no `jvmArgs` needed.
+
+- **Window theme.** `setWindowTheme(primary, secondary, accent, contentBg, titleFont)` themes the
+  window decorations in one call. Open windows repaint at once, and `null` resets a value.
+- **Generic host properties.** `getProperty`, `setProperties(Map)` and
+  `addPropertyChangeListener(prefix, …)` give access to any host property. Runtime values sit on
+  top of the system properties; keys no listener covers are logged.
+- **Theme-driven.** Decoration colours and the title font also follow the look-and-feel: put the
+  same keys into a FlatLaf theme `.properties` and dark-mode switches restyle the title bars.
+- Lookup order: `UIManager` → runtime value → `-D` system property → built-in default.
+  `titleHeight` and `borderWidth` are read once at startup.
+
+```java
+WebswingApi api = WebswingUtil.getWebswingApi();   // null outside Suramadu
+if (api != null) {
+    api.setWindowTheme(navy, gray, orange, panelBg, titleFont);
+    api.setProperty(WebswingApi.WINDOW_THEME_TITLE_HEIGHT, "24");  // before the first window
+}
+```
+
+All signatures use JDK types only, so applications without a compile-time dependency can call
+them reflectively on the object returned by the toolkit's `getApi()`.
 
 ### Leaner Client & Supply Chain (27.3)
 
@@ -228,9 +253,9 @@ suppressions carry a written justification, reviewer and date in
 
 ```bash
 # Download the latest release
-curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.3.0.zip
-unzip suramadu-27.3.0.zip
-cd suramadu-27.3.0
+curl -LO https://github.com/manticore-projects/suramadu/releases/latest/download/suramadu-27.4.0.zip
+unzip suramadu-27.4.0.zip
+cd suramadu-27.4.0
 
 # Start the server
 ./run.sh start
@@ -281,7 +306,7 @@ cd suramadu
 
 ```bash
 # Extract to your deployment directory
-unzip build/dist/suramadu-27.3.0.zip -d /opt/suramadu
+unzip build/dist/suramadu-27.4.0.zip -d /opt/suramadu
 
 # Configure your Swing application
 vim /opt/suramadu/suramadu.config

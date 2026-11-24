@@ -3,6 +3,7 @@ package org.webswing.theme;
 import org.webswing.common.WindowActionType;
 import org.webswing.common.WindowDecoratorTheme;
 import org.webswing.model.appframe.out.AccessibilityMsgOut;
+import org.webswing.toolkit.api.WebswingApi;
 import org.webswing.toolkit.api.component.Dockable;
 import org.webswing.toolkit.util.Util;
 
@@ -26,13 +27,24 @@ import java.awt.Shape;
 import java.awt.Window;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Pure Java2D / Swing window decorator. No bitmaps, no XPM, no themerc, and no runtime dependency
- * on FlatLaf — everything is resolved from system properties with hardcoded Manticore brand
- * defaults.
+ * on FlatLaf.
  *
- * <h3>Configuration (system properties)</h3>
+ * <h3>Configuration</h3> Every key is resolved, first hit wins:
+ * <ol>
+ * <li>{@code UIManager} value of the same key (e.g. from a FlatLaf theme {@code .properties} —
+ * follows look-and-feel / dark-mode switches),</li>
+ * <li>host property set at runtime via {@link WebswingApi#setProperties(java.util.Map)},</li>
+ * <li>JVM system property (app {@code jvmArgs}),</li>
+ * <li>hardcoded Manticore brand default.</li>
+ * </ol>
+ * Colours and title font are <b>live</b>: re-resolved and repainted on look-and-feel change,
+ * {@code UIManager.put} of a theme key, or a runtime host-property change. Geometry
+ * ({@code titleHeight}, {@code borderWidth}) is <b>startup-only</b> — it is read when the decorator
+ * is created (it changes window insets) and is not taken from {@code UIManager}.
  *
  * <pre>
  *   org.webswing.window.theme.primaryColor       (Color)  active title bar     default #030146 (navy)
@@ -42,8 +54,12 @@ import java.util.List;
  *                                                         matches the content pane                default #ffffff (white)
  *   org.webswing.window.theme.titleHeight        (int)                          default 22
  *   org.webswing.window.theme.borderWidth        (int)    visible 1 px outline default 1
- *   org.webswing.window.theme.titleFont          (String) e.g. "Roboto Medium" default SansSerif 12
+ *   org.webswing.window.theme.titleFont          (String|Font) e.g. "Roboto Medium" default SansSerif 12
  * </pre>
+ * 
+ * A {@code String} font is either {@code Face-STYLE-size} ({@link Font#decode(String)} form, e.g.
+ * {@code Roboto Medium-BOLD-12}) or a bare face name (bold 12); a {@code Font} from
+ * {@code UIManager} is used as is.
  *
  * <h3>FlatLaf integration (optional)</h3> If your app uses FlatLaf with
  * {@code JFrame.setDefaultLookAndFeelDecorated(true)}, the JFrame title bar is rendered by FlatLaf,
@@ -56,6 +72,7 @@ import java.util.List;
 public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
 
   // ---- Property names ------------------------------------------------------
+  private static final String PROP_PREFIX = "org.webswing.window.theme.";
   private static final String PROP_PRIMARY = "org.webswing.window.theme.primaryColor";
   private static final String PROP_SECONDARY = "org.webswing.window.theme.secondaryColor";
   private static final String PROP_ACCENT = "org.webswing.window.theme.accentColor";
@@ -72,12 +89,13 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
   private static final Color FALLBACK_FG_LIGHT = new Color(0xf0f0f0);
   private static final Color FALLBACK_FG_DARK = new Color(0x202020);
 
-  // ---- Resolved theme values (sysprop > hardcoded; resolved once at ctor) --
-  private final Color primaryColor;
-  private final Color secondaryColor;
-  private final Color accentColor;
-  private final Color contentBg;
-  private final String titleFontName; // null => use SansSerif fallback
+  // ---- Live palette (shared by all instances; swapped atomically) ----------
+  private record Palette(Color primary, Color secondary, Color accent, Color contentBg,
+      Font titleFont) {}
+
+  private static volatile Palette palette;
+  private static final AtomicBoolean LISTENERS_INSTALLED = new AtomicBoolean();
+  private static final AtomicBoolean REFRESH_PENDING = new AtomicBoolean();
 
   // ---- Geometry ------------------------------------------------------------
   private final int titleHeight;
@@ -85,8 +103,8 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
   /**
    * Effective chrome thickness on left/right/bottom — at least {@link #MIN_HIT_ZONE} px so Webswing
    * actually delivers mouse events for resize hit-testing. Visually only the outermost
-   * {@link #borderWidth} pixels are painted in the border colour; the gap is filled with
-   * {@link #contentBg} and is invisible.
+   * {@link #borderWidth} pixels are painted in the border colour; the gap is filled with the
+   * content background colour and is invisible.
    */
   private final int chromeMargin;
 
@@ -107,26 +125,152 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
   private final Insets insets;
 
   public DefaultWindowDecoratorTheme() {
-    this.primaryColor = orDefault(parseColorOrNull(PROP_PRIMARY), FALLBACK_PRIMARY);
-    this.secondaryColor = orDefault(parseColorOrNull(PROP_SECONDARY), FALLBACK_SECONDARY);
-    this.accentColor = orDefault(parseColorOrNull(PROP_ACCENT), FALLBACK_ACCENT);
-    this.contentBg = orDefault(parseColorOrNull(PROP_CONTENT_BG), FALLBACK_CONTENT_BG);
-    this.titleFontName = System.getProperty(PROP_TITLE_FONT);
-
+    // Geometry: startup-only (host property or sysprop), never UIManager — it defines insets.
     this.titleHeight = parseIntOr(PROP_TITLE_HEIGHT, 22);
     this.borderWidth = parseIntOr(PROP_BORDER_WIDTH, 1);
     this.chromeMargin = Math.max(borderWidth, MIN_HIT_ZONE);
 
     this.insets = new Insets(titleHeight, chromeMargin, chromeMargin, chromeMargin);
 
-    // One-shot startup log so configuration is verifiable. Look for this line in stdout
-    // — if values aren't what you set in JAVA_OPTS, the sysprops aren't reaching the JVM
-    // (commonly: an unquoted '#' in a hex code being read as a shell comment).
+    installListeners();
+    Palette p = palette();
+
+    // Startup log so configuration is verifiable. If values aren't what you configured, check
+    // the theme .properties / API call, or for jvmArgs an unquoted '#' read as a shell comment.
     System.out.println("DefaultWindowDecoratorTheme:" + " titleHeight=" + titleHeight
-        + " borderWidth=" + borderWidth + " chromeMargin=" + chromeMargin + " primary="
-        + hex(primaryColor) + " secondary=" + hex(secondaryColor) + " accent=" + hex(accentColor)
-        + " contentBg=" + hex(contentBg) + " titleFont="
-        + (titleFontName != null ? titleFontName : "<default>"));
+        + " borderWidth=" + borderWidth + " chromeMargin=" + chromeMargin + " " + describe(p));
+  }
+
+  // =========================================================================
+  // Live palette resolution
+  // =========================================================================
+
+  private static Palette palette() {
+    Palette p = palette;
+    if (p == null) {
+      p = resolvePalette();
+      palette = p;
+    }
+    return p;
+  }
+
+  private static Palette resolvePalette() {
+    return new Palette(resolveColor(PROP_PRIMARY, FALLBACK_PRIMARY),
+        resolveColor(PROP_SECONDARY, FALLBACK_SECONDARY),
+        resolveColor(PROP_ACCENT, FALLBACK_ACCENT),
+        resolveColor(PROP_CONTENT_BG, FALLBACK_CONTENT_BG), resolveTitleFont());
+  }
+
+  /**
+   * Installs the change listeners exactly once per JVM, regardless of how many decorator instances
+   * the toolkit creates.
+   */
+  private static void installListeners() {
+    if (!LISTENERS_INSTALLED.compareAndSet(false, true)) {
+      return;
+    }
+    // Look-and-feel switch (FlatLaf setup / theme reload / dark mode): defaults are replaced
+    // before this event fires.
+    UIManager.addPropertyChangeListener(e -> {
+      if ("lookAndFeel".equals(e.getPropertyName())) {
+        scheduleRefresh();
+      }
+    });
+    // UIManager.put(...) of one of our keys at runtime.
+    UIManager.getDefaults().addPropertyChangeListener(e -> {
+      String key = e.getPropertyName();
+      if (key != null && key.startsWith(PROP_PREFIX)) {
+        scheduleRefresh();
+      }
+    });
+    // Runtime host-property change through the Suramadu API.
+    WebswingApi api = api();
+    if (api != null) {
+      api.addPropertyChangeListener(PROP_PREFIX, e -> {
+        String key = e.getPropertyName();
+        if (PROP_TITLE_HEIGHT.equals(key) || PROP_BORDER_WIDTH.equals(key)) {
+          System.err.println("DefaultWindowDecoratorTheme: " + key
+              + " is startup-only; runtime change ignored (set it before the first window or via jvmArgs)");
+        } else {
+          scheduleRefresh();
+        }
+      });
+    }
+  }
+
+  /** Coalesces bursts of changes (a batch, or LAF + puts) into one re-resolve and repaint. */
+  private static void scheduleRefresh() {
+    if (!REFRESH_PENDING.compareAndSet(false, true)) {
+      return;
+    }
+    SwingUtilities.invokeLater(() -> {
+      REFRESH_PENDING.set(false);
+      Palette p = resolvePalette();
+      palette = p;
+      System.out.println("DefaultWindowDecoratorTheme: refreshed " + describe(p));
+      for (Window w : Window.getWindows()) {
+        if (w.isShowing()) {
+          w.repaint();
+        }
+      }
+      try {
+        if (Util.getWebToolkit().getPaintDispatcher() != null) {
+          Util.getWebToolkit().getPaintDispatcher().notifyWindowRepaintAll();
+        }
+      } catch (RuntimeException ex) {
+        // toolkit not fully up yet — the next regular paint picks the new palette up
+      }
+    });
+  }
+
+  private static WebswingApi api() {
+    try {
+      return Util.getWebToolkit().getApi();
+    } catch (RuntimeException ex) {
+      return null;
+    }
+  }
+
+  /** Host property (runtime overlay, then sysprop); plain sysprop when the API is unavailable. */
+  private static String property(String key) {
+    WebswingApi api = api();
+    return api != null ? api.getProperty(key) : System.getProperty(key);
+  }
+
+  private static Color resolveColor(String key, Color fallback) {
+    Object ui = UIManager.get(key);
+    if (ui instanceof Color c) {
+      return new Color(c.getRed(), c.getGreen(), c.getBlue(), c.getAlpha()); // drop UIResource
+    }
+    Color c = ui instanceof String s ? decodeOrNull(key, s) : null;
+    if (c == null) {
+      c = decodeOrNull(key, property(key));
+    }
+    return c != null ? c : fallback;
+  }
+
+  private static Font resolveTitleFont() {
+    Object ui = UIManager.get(PROP_TITLE_FONT);
+    if (ui instanceof Font f) {
+      return new Font(f.getAttributes()); // drop UIResource
+    }
+    String name = ui instanceof String s ? s : property(PROP_TITLE_FONT);
+    if (name != null && !name.isBlank()) {
+      String n = name.trim();
+      // "Face-STYLE-size" (java.awt.Font.decode form) carries style and size; a bare face name
+      // keeps the historic bold 12.
+      return FONT_SPEC.matcher(n).matches() ? Font.decode(n) : new Font(n, Font.BOLD, 12);
+    }
+    return new Font(Font.SANS_SERIF, Font.BOLD, 12);
+  }
+
+  private static final java.util.regex.Pattern FONT_SPEC =
+      java.util.regex.Pattern.compile(".+-(?i:PLAIN|BOLD|ITALIC|BOLDITALIC)-\\d+");
+
+  private static String describe(Palette p) {
+    return "primary=" + hex(p.primary()) + " secondary=" + hex(p.secondary()) + " accent="
+        + hex(p.accent()) + " contentBg=" + hex(p.contentBg()) + " titleFont="
+        + p.titleFont().getFontName() + " " + p.titleFont().getSize();
   }
 
   // =========================================================================
@@ -153,11 +297,12 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
           && window.equals(Util.getWebToolkit().getWindowManager().getActiveWindow());
       boolean isDialog = window instanceof Dialog;
 
-      Color bg = active ? primaryColor : secondaryColor;
+      Palette p = palette(); // one consistent snapshot per paint
+      Color bg = active ? p.primary() : p.secondary();
       Color fg = preferredForeground(bg);
       Color borderColor = darken(bg, 0.15f);
 
-      paintChrome(g2, w, h, bg, borderColor, contentBg, active, isDialog);
+      paintChrome(g2, w, h, bg, borderColor, p.contentBg(), active, isDialog);
 
       // ---- Window icon ----
       Image icon = getIcon(window);
@@ -184,7 +329,7 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
 
       // ---- Title text ----
       String title = nullToEmpty(getTitle(window));
-      g2.setFont(titleFont());
+      g2.setFont(p.titleFont());
       g2.setColor(fg);
       FontMetrics fm = g2.getFontMetrics();
       int textY = (titleHeight - fm.getHeight()) / 2 + fm.getAscent();
@@ -554,7 +699,7 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
    * Webswing-decorated dialogs.
    *
    * <p>
-   * Reads the same sysprops as the decorator; falls back to brand defaults. No FlatLaf classes are
+   * Resolves the same keys as the decorator; falls back to brand defaults. No FlatLaf classes are
    * imported — this just sets standard UIManager keys, so it is harmless on LAFs that don't read
    * them.
    *
@@ -565,9 +710,10 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
    * </pre>
    */
   public static void applyToUIManager() {
-    Color primary = orDefault(parseColorOrNull(PROP_PRIMARY), FALLBACK_PRIMARY);
-    Color secondary = orDefault(parseColorOrNull(PROP_SECONDARY), FALLBACK_SECONDARY);
-    Color accent = orDefault(parseColorOrNull(PROP_ACCENT), FALLBACK_ACCENT);
+    Palette p = resolvePalette();
+    Color primary = p.primary();
+    Color secondary = p.secondary();
+    Color accent = p.accent();
 
     Color primaryFg = preferredForeground(primary);
     Color secondaryFg = preferredForeground(secondary);
@@ -617,13 +763,6 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
 
   private static boolean isMaximized(Object o) {
     return o instanceof Frame f && (f.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0;
-  }
-
-  private Font titleFont() {
-    if (titleFontName != null && !titleFontName.isBlank()) {
-      return new Font(titleFontName, Font.BOLD, 12);
-    }
-    return new Font(Font.SANS_SERIF, Font.BOLD, 12);
   }
 
   /** Pick a foreground colour (light or dark) based on background luminance — WCAG style. */
@@ -726,25 +865,20 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
     return Math.max(0, Math.min(255, v));
   }
 
-  private static Color orDefault(Color c, Color fallback) {
-    return c != null ? c : fallback;
-  }
-
-  private static Color parseColorOrNull(String prop) {
-    String v = System.getProperty(prop);
+  private static Color decodeOrNull(String prop, String v) {
     if (v == null || v.isBlank())
       return null;
     try {
       return Color.decode(v.trim());
     } catch (NumberFormatException ex) {
       System.err.println("DefaultWindowDecoratorTheme: cannot parse " + prop + "=\"" + v + "\" — "
-          + ex.getMessage() + " (falling back to default)");
+          + ex.getMessage() + " (falling back)");
       return null;
     }
   }
 
   private static int parseIntOr(String prop, int fallback) {
-    String v = System.getProperty(prop);
+    String v = property(prop);
     if (v == null || v.isBlank())
       return fallback;
     try {

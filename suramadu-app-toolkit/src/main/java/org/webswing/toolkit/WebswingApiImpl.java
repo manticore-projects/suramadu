@@ -45,12 +45,16 @@ import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.Transferable;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.io.IOException;
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -69,6 +73,12 @@ public class WebswingApiImpl implements WebswingApi {
   private WebswingUser mirrorUser;
   private WebswingUrlState state =
       parseState(System.getProperty(Constants.SWING_START_SYS_PROP_INITIAL_URL));
+
+  /** Runtime host-property overlay; falls back to System properties. Never holds null values. */
+  private final Map<String, String> propertyOverrides = new ConcurrentHashMap<>();
+  private final List<PrefixListener> propertyListeners = new CopyOnWriteArrayList<>();
+
+  private record PrefixListener(String prefix, PropertyChangeListener listener) {}
 
   @Override
   public WebswingUser getPrimaryUser() {
@@ -612,6 +622,77 @@ public class WebswingApiImpl implements WebswingApi {
   @Override
   public void registerCustomFileChooser(JFileChooser fileChooser, Window parent) {
     Util.getWebToolkit().getPaintDispatcher().registerFileChooserWindows(fileChooser, parent);
+  }
+
+  // ===========================================================================
+  // Host properties
+  // ===========================================================================
+
+  @Override
+  public String getProperty(String key) {
+    if (key == null) {
+      return null;
+    }
+    String v = propertyOverrides.get(key);
+    return v != null ? v : System.getProperty(key);
+  }
+
+  @Override
+  public void setProperties(Map<String, String> properties) {
+    if (properties == null || properties.isEmpty()) {
+      return;
+    }
+    List<PropertyChangeEvent> events = new ArrayList<>(properties.size());
+    // Serialise writers so old/new values of one batch are consistent; readers stay lock-free.
+    synchronized (propertyOverrides) {
+      for (Map.Entry<String, String> e : properties.entrySet()) {
+        String key = e.getKey();
+        if (key == null || key.isBlank()) {
+          continue;
+        }
+        String oldValue = getProperty(key);
+        if (e.getValue() == null) {
+          propertyOverrides.remove(key);
+        } else {
+          propertyOverrides.put(key, e.getValue());
+        }
+        String newValue = getProperty(key);
+        if (!Objects.equals(oldValue, newValue)) {
+          events.add(new PropertyChangeEvent(this, key, oldValue, newValue));
+        }
+      }
+    }
+    for (PropertyChangeEvent ev : events) {
+      boolean consumed = false;
+      for (PrefixListener pl : propertyListeners) {
+        if (ev.getPropertyName().startsWith(pl.prefix())) {
+          consumed = true;
+          try {
+            pl.listener().propertyChange(ev);
+          } catch (Exception ex) {
+            AppLogger.error("Host property listener failed for " + ev.getPropertyName(), ex);
+          }
+        }
+      }
+      if (!consumed) {
+        AppLogger.warn("Host property '" + ev.getPropertyName()
+            + "' set at runtime has no live consumer; it applies only where it is read later.");
+      }
+    }
+  }
+
+  @Override
+  public void addPropertyChangeListener(String keyPrefix, PropertyChangeListener listener) {
+    if (listener != null) {
+      propertyListeners.add(new PrefixListener(keyPrefix == null ? "" : keyPrefix, listener));
+    }
+  }
+
+  @Override
+  public void removePropertyChangeListener(String keyPrefix, PropertyChangeListener listener) {
+    if (listener != null) {
+      propertyListeners.remove(new PrefixListener(keyPrefix == null ? "" : keyPrefix, listener));
+    }
   }
 
   public class WebswingUrlStateChangeEventImpl implements WebswingUrlStateChangeEvent {
