@@ -1,0 +1,199 @@
+# suramadu.service -- Suramadu (WebSwing fork) server. Single, standalone unit (no run.sh).
+#
+# Install (adjust User/Group; /opt/suramadu is literal in WorkingDirectory and the log path):
+#     cp suramadu.service /etc/systemd/system/
+#     systemctl daemon-reload && systemctl enable --now suramadu
+# Restart (also works from inside a Suramadu session, systemd finishes the job):
+#     systemctl restart suramadu
+# NOTE: restart stops the old server first; if preflight then fails (JDK < 17, bad JVM option,
+# no WAR) the server stays down and `systemctl status suramadu` shows why. Fix, then start again.
+# Logs: /opt/suramadu/logs/Suramadu.log (rotated at every start, 10 days kept).
+#
+# Start steps, in order: preflight (JDK lookup + >= 17 check, Shenandoah else G1, newest WAR,
+# JVM dry-run, writes /run/suramadu/launch.env), log rotation, optional cert import.
+#
+# Optional per-host settings in /etc/default/suramadu (plain KEY=VALUE, all optional):
+#     JAVA_HOME=/opt/jdk-25   JAVA_XMX=2G   JAVA_XMS=64m
+#     SURAMADU_VERSION=27.4.0          # pin a WAR version
+#     SURAMADU_CONFIG_DIR=/opt/suramadu/conf
+#     BRANDING_OPTS=                   # empty = neutral theme; unset = red theme
+#     EXTRA_JVM_OPTS=-Dfoo=bar
+#     SSL_CERTS="alias|host|port alias2|host2|port2"   # needs openssl; imported into cacerts
+#     SSL_KEYSTORE=  SSL_KEYSTORE_PASS=changeit
+#     SERVER_CERT_ALIASES="rootca"  SERVER_KEYSTORE=/path/keystore.jks  SERVER_KEYSTORE_PASS=...
+#     APP_JDK_HOME=/path/to/app-jdk  APP_TRUSTSTORE_PASS=changeit
+# (secrets only in a root-owned, mode 0600 /etc/default/suramadu)
+
+[Unit]
+Description=Suramadu server
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=suramadu
+Group=suramadu
+WorkingDirectory=/opt/suramadu
+EnvironmentFile=-/etc/default/suramadu
+# read again right before each Exec* line, so ExecStart sees what preflight just wrote
+EnvironmentFile=-/run/suramadu/launch.env
+RuntimeDirectory=suramadu
+
+StandardOutput=append:/opt/suramadu/logs/Suramadu.log
+StandardError=inherit
+
+# nice -n 10 / ionice -c 2 -n 4 / ulimit -n 65535 of run.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=4
+LimitNOFILE=65535
+
+ExecStartPre=/bin/sh -c "\
+set -eu\n\
+B=$$(pwd -P)\n\
+mkdir -p \"$$B/logs\"\n\
+OUT=$${RUNTIME_DIRECTORY:-/run/suramadu}/launch.env\n\
+rm -f \"$$OUT\"\n\
+H=$${HOME:-}\n\
+C=$${SURAMADU_CONFIG_DIR:-}\n\
+if [ -z \"$$C\" ]; then\n\
+  C=$$B\n\
+  if [ -f \"$$H/.manticore/suramadu.config\" ] || [ -f \"$$H/.manticore/webswing.config\" ]; then C=$$H/.manticore; fi\n\
+fi\n\
+CF=$$C/suramadu.config\n\
+[ -f \"$$CF\" ] || CF=$$C/webswing.config\n\
+PF=$$C/suramadu.properties\n\
+[ -f \"$$PF\" ] || PF=$$C/webswing.properties\n\
+JF=$$C/jetty.properties\n\
+for f in \"$$CF\" \"$$PF\" \"$$JF\"; do\n\
+  [ -f \"$$f\" ] || echo \"WARN: $$f not found\"\n\
+done\n\
+LP=\n\
+for c in \"$$C/logging.properties\" \"$$H/.manticore/logging.properties\"; do\n\
+  if [ -f \"$$c\" ]; then LP=-Djava.util.logging.config.file=$$c; break; fi\n\
+done\n\
+J=$${JAVA_HOME:-}\n\
+if [ -z \"$$J\" ] || [ ! -x \"$$J/bin/java\" ]; then\n\
+  J=\n\
+  for c in \"$$B/../java\" /usr/lib/jvm/default-runtime /usr/lib/jvm/default; do\n\
+    if [ -x \"$$c/bin/java\" ]; then J=$$(cd \"$$c\" && pwd -P); break; fi\n\
+  done\n\
+fi\n\
+if [ -n \"$$J\" ]; then\n\
+  JB=$$J/bin/java\n\
+else\n\
+  JB=$$(command -v java || true)\n\
+  [ -n \"$$JB\" ] || { echo \"ERROR: Java not found (JAVA_HOME, $$B/../java, /usr/lib/jvm/default[-runtime], PATH)\"; exit 1; }\n\
+  JB=$$(readlink -f \"$$JB\")\n\
+  echo \"WARN: no bundled or default JDK, using system java $$JB\"\n\
+  J=$${JB%%/bin/java}\n\
+fi\n\
+VO=$$(\"$$JB\" -version 2>&1 | grep -m1 ' version ' || true)\n\
+V=$${VO#*\\\"}\n\
+V=$${V%%%%[!0-9]*}\n\
+if [ \"$${V:-0}\" -lt 17 ]; then echo \"ERROR: Java $${V:-unknown} at $$JB, JDK 17+ required\"; exit 1; fi\n\
+echo \"Java $$V at $$JB\"\n\
+if \"$$JB\" -XX:+UseShenandoahGC -version >/dev/null 2>&1; then\n\
+  GC=-XX:+UseShenandoahGC\n\
+else\n\
+  echo \"WARN: this JDK has no Shenandoah, falling back to G1\"\n\
+  GC=\"-XX:+UseG1GC -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=30\"\n\
+fi\n\
+if [ -n \"$${SURAMADU_VERSION:-}\" ]; then\n\
+  W=$$B/suramadu-server-$$SURAMADU_VERSION.war\n\
+  [ -f \"$$W\" ] || { echo \"ERROR: $$W not found\"; exit 1; }\n\
+else\n\
+  W=$$(for f in \"$$B\"/suramadu-server-*.war; do\n\
+    [ -f \"$$f\" ] || continue\n\
+    v=$${f##*/suramadu-server-}\n\
+    v=$${v%%.war}\n\
+    case $$v in *[!0-9.]*) continue;; esac\n\
+    echo \"$$v $$f\"\n\
+  done | sort -V | tail -n 1 | cut -d' ' -f2-)\n\
+  if [ -z \"$$W\" ] && [ -f \"$$B/suramadu-server.war\" ]; then W=$$B/suramadu-server.war; fi\n\
+  [ -n \"$$W\" ] || { echo \"ERROR: no suramadu-server-*.war in $$B\"; exit 1; }\n\
+fi\n\
+LOGS=$$B/logs\n\
+O=\"-server -Xmx$${JAVA_XMX:-2G} -Xms$${JAVA_XMS:-64m} -Xss228k -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=$$LOGS -XX:ErrorFile=$$LOGS/hs_err_%%p.log -Dcom.sun.jndi.ldap.object.disableEndpointIdentification=true -Dwebswing.websocketMessageSizeLimit=1024000 -Djsse.enableSNIExtension=false --add-modules=java.desktop --add-exports=java.desktop/sun.awt=ALL-UNNAMED --add-exports=java.desktop/sun.awt.dnd=ALL-UNNAMED --add-exports=java.desktop/sun.awt.datatransfer=ALL-UNNAMED --add-exports=java.desktop/sun.awt.image=ALL-UNNAMED --add-exports=java.desktop/sun.java2d=ALL-UNNAMED --add-exports=java.desktop/sun.java2d.pipe=ALL-UNNAMED --add-exports=java.desktop/sun.java2d.loops=ALL-UNNAMED --add-exports=java.desktop/sun.font=ALL-UNNAMED --add-exports=java.desktop/sun.print=ALL-UNNAMED --add-exports=java.desktop/java.awt.peer=ALL-UNNAMED --add-exports=java.desktop/java.awt.dnd=ALL-UNNAMED --add-exports=java.base/sun.nio.cs=ALL-UNNAMED --add-opens=java.desktop/sun.awt.image=ALL-UNNAMED\"\n\
+BR=$${BRANDING_OPTS--Dorg.webswing.window.theme.primaryColor=0xd70900 -Dorg.webswing.window.theme.secondaryColor=0xd70900 -Dorg.webswing.window.theme.contentBgColor=0xffffff}\n\
+FULL=\"$$O $$GC $$BR $${EXTRA_JVM_OPTS:-}\"\n\
+if ! OV=$$(\"$$JB\" $$FULL -version 2>&1); then\n\
+  echo \"ERROR: the JVM rejects its start options:\"\n\
+  echo \"$$OV\"\n\
+  exit 1\n\
+fi\n\
+SO=\"-h 0.0.0.0 -j $$JF -c $$CF -pf $$PF\"\n\
+if [ ! -f \"$$B/dist/ext-lib/libjemalloc.so.2\" ]; then\n\
+  echo \"WARN: $$B/dist/ext-lib/libjemalloc.so.2 not found, starting without jemalloc\"\n\
+fi\n\
+{\n\
+  printf 'JAVA_BIN=%%s\\n' \"$$JB\"\n\
+  printf 'WAR_FILE=%%s\\n' \"$$W\"\n\
+  printf 'RESOLVED_JAVA_HOME=%%s\\n' \"$$J\"\n\
+  printf 'JVM_OPTS=\"%%s\"\\n' \"$$FULL\"\n\
+  printf 'LOGGING_OPT=\"%%s\"\\n' \"$$LP\"\n\
+  printf 'SURAMADU_OPTS=\"%%s\"\\n' \"$$SO\"\n\
+  if [ -f \"$$B/dist/ext-lib/libjemalloc.so.2\" ]; then\n\
+    printf 'LD_PRELOAD=%%s\\n' \"$$B/dist/ext-lib/libjemalloc.so.2\"\n\
+    printf 'MALLOC_CONF=%%s\\n' \"background_thread:true,metadata_thp:auto,dirty_decay_ms:5000,muzzy_decay_ms:5000,tcache_max:16384,narenas:4\"\n\
+  fi\n\
+} > \"$$OUT\"\n\
+echo \"Preflight OK: $$(basename \"$$W\"), $$JB, $$GC\""
+ExecStartPre=-/bin/sh -c "\
+set -eu\n\
+D=$$(pwd -P)/logs\n\
+L=$$D/Suramadu.log\n\
+find \"$$D\" -name 'Suramadu.log*' -type f -mtime +10 -delete 2>/dev/null || true\n\
+if [ -s \"$$L\" ]; then mv \"$$L\" \"$${L}_$$(date +%%Y%%m%%d%%H%%M%%S)\"; fi"
+ExecStartPre=-/bin/sh -c "\
+set -eu\n\
+[ -n \"$${SSL_CERTS:-}$${SERVER_CERT_ALIASES:-}\" ] || exit 0\n\
+K=$${RESOLVED_JAVA_HOME:-}/bin/keytool\n\
+[ -x \"$$K\" ] || { echo \"WARN: keytool not found at $$K, skipping certificate import\"; exit 0; }\n\
+T=$$(mktemp -d)\n\
+trap 'rm -rf \"$$T\"' EXIT\n\
+PW=$${SSL_KEYSTORE_PASS:-changeit}\n\
+KS=$${SSL_KEYSTORE:-$$RESOLVED_JAVA_HOME/lib/security/cacerts}\n\
+for e in $${SSL_CERTS:-}; do\n\
+  a=$${e%%%%|*}\n\
+  r=$${e#*|}\n\
+  h=$${r%%%%|*}\n\
+  p=$${r#*|}\n\
+  echo \"Importing SSL cert: $$a ($$h:$$p)\"\n\
+  openssl s_client -connect \"$$h:$$p\" -servername \"$$h\" -showcerts </dev/null 2>/dev/null | awk -v d=\"$$T\" -v a=\"$$a\" '/BEGIN CERTIFICATE/{n++; f=d\"/\"a\"-\"n\".pem\"} f{print > f} /END CERTIFICATE/{close(f); f=\"\"}'\n\
+  i=0\n\
+  for f in \"$$T/$$a\"-*.pem; do\n\
+    [ -f \"$$f\" ] || continue\n\
+    \"$$K\" -delete -keystore \"$$KS\" -storepass \"$$PW\" -alias \"$$a-$$i\" >/dev/null 2>&1 || true\n\
+    if \"$$K\" -import -noprompt -trustcacerts -alias \"$$a-$$i\" -file \"$$f\" -keystore \"$$KS\" -storepass \"$$PW\" >/dev/null 2>&1; then echo \"  Imported $$a-$$i\"; else echo \"  WARN: failed to import $$a-$$i\"; fi\n\
+    i=$$((i+1))\n\
+  done\n\
+done\n\
+if [ -n \"$${SERVER_CERT_ALIASES:-}\" ]; then\n\
+  TS=$${APP_JDK_HOME:-}/lib/security/cacerts\n\
+  if [ -f \"$${SERVER_KEYSTORE:-}\" ] && [ -w \"$$TS\" ]; then\n\
+    for al in $$SERVER_CERT_ALIASES; do\n\
+      if \"$$K\" -exportcert -rfc -keystore \"$$SERVER_KEYSTORE\" -storepass \"$${SERVER_KEYSTORE_PASS:-}\" -alias \"$$al\" -file \"$$T/$$al.crt\" 2>/dev/null; then\n\
+        \"$$K\" -delete -keystore \"$$TS\" -storepass \"$${APP_TRUSTSTORE_PASS:-changeit}\" -alias \"suramadu-$$al\" >/dev/null 2>&1 || true\n\
+        if \"$$K\" -importcert -noprompt -trustcacerts -keystore \"$$TS\" -storepass \"$${APP_TRUSTSTORE_PASS:-changeit}\" -alias \"suramadu-$$al\" -file \"$$T/$$al.crt\" >/dev/null 2>&1; then echo \"  Imported $$al into app truststore\"; else echo \"  WARN: failed to import $$al\"; fi\n\
+      else\n\
+        echo \"  WARN: alias $$al not in keystore, skipped\"\n\
+      fi\n\
+    done\n\
+  else\n\
+    echo \"WARN: SERVER_KEYSTORE missing or $$TS not writable, skipping server-cert import\"\n\
+  fi\n\
+fi"
+ExecStart=/usr/bin/env ${JAVA_BIN} $JVM_OPTS $LOGGING_OPT -jar ${WAR_FILE} $SURAMADU_OPTS
+
+KillMode=mixed
+TimeoutStopSec=30
+SuccessExitStatus=143
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
