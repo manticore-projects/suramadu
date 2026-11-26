@@ -689,8 +689,10 @@ public class WebswingApiImpl implements WebswingApi {
         }
       }
       if (!consumed) {
-        AppLogger.warn("Host property '" + ev.getPropertyName()
-            + "' set at runtime has no live consumer; it applies only where it is read later.");
+        // consumers may subscribe lazily (the window decorator does so on its first paint and reads
+        // the value then), so this is no error
+        AppLogger.debug("Host property '" + ev.getPropertyName()
+            + "' set at runtime has no live consumer yet; it applies where it is read later.");
       }
     }
   }
@@ -804,18 +806,53 @@ public class WebswingApiImpl implements WebswingApi {
   /** DirectDraw's font registry, resolved by name: this module has no compile dependency on it. */
   private static final String WEB_FONT_REGISTRY = "org.webswing.directdraw.util.WebFontRegistry";
   private static volatile java.lang.reflect.Method webFontRegister;
+  private static volatile boolean webFontRegistryMissing;
+
+  /**
+   * The toolkit lives on the boot class path; DirectDraw and the app services live in the
+   * launcher's shared class loader (WEB-INF/lib), so Class.forName(name) from here cannot see it.
+   * The connection service implementation comes from the app services, so its class loader is
+   * exactly the one DirectDraw was loaded by, and the registry instance is the one DirectDraw
+   * reads.
+   */
+  private static java.lang.reflect.Method resolveWebFontRegister() {
+    java.lang.reflect.Method m = webFontRegister;
+    if (m != null || webFontRegistryMissing) {
+      return m;
+    }
+    ClassLoader servicesLoader = null;
+    try {
+      Object connection = Services.getConnectionService();
+      servicesLoader = connection != null ? connection.getClass().getClassLoader() : null;
+    } catch (RuntimeException | LinkageError e) {
+      // services not initialised: fall back to the generic loaders below
+    }
+    ClassLoader[] loaders = {servicesLoader, Thread.currentThread().getContextClassLoader(),
+        ClassLoader.getSystemClassLoader(), WebswingApiImpl.class.getClassLoader()};
+    for (ClassLoader loader : loaders) {
+      try {
+        m = Class.forName(WEB_FONT_REGISTRY, true, loader).getMethod("register", byte[].class);
+        webFontRegister = m;
+        AppLogger.info("Web font registry resolved in " + m.getDeclaringClass().getClassLoader());
+        return m;
+      } catch (ClassNotFoundException | NoSuchMethodException | LinkageError e) {
+        // try the next loader
+      }
+    }
+    webFontRegistryMissing = true;
+    AppLogger.warn("Web font registration unavailable: " + WEB_FONT_REGISTRY + " not found; tried "
+        + java.util.Arrays.toString(loaders));
+    return null;
+  }
 
   @Override
   public String registerWebFont(byte[] ttf) {
+    java.lang.reflect.Method m = resolveWebFontRegister();
+    if (m == null) {
+      return null;
+    }
     try {
-      java.lang.reflect.Method m = webFontRegister;
-      if (m == null) {
-        m = Class.forName(WEB_FONT_REGISTRY).getMethod("register", byte[].class);
-        webFontRegister = m;
-      }
       return (String) m.invoke(null, (Object) ttf);
-    } catch (ClassNotFoundException | NoSuchMethodException e) {
-      AppLogger.warn("Web font registration unavailable (DirectDraw not on the classpath).", e);
     } catch (java.lang.reflect.InvocationTargetException e) {
       AppLogger.error("Web font registration failed.", e.getCause());
     } catch (IllegalAccessException e) {

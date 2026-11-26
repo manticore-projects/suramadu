@@ -272,9 +272,43 @@ public class DefaultWindowDecoratorTheme implements WindowDecoratorTheme {
       String n = name.trim();
       // "Face-STYLE-size" (java.awt.Font.decode form) carries style and size; a bare face name
       // keeps the historic bold 12.
-      return FONT_SPEC.matcher(n).matches() ? Font.decode(n) : new Font(n, Font.BOLD, 12);
+      Font f = FONT_SPEC.matcher(n).matches() ? Font.decode(n) : new Font(n, Font.BOLD, 12);
+      return resolveRegistered(f,
+          FONT_SPEC.matcher(n).matches()
+              ? n.substring(0, n.lastIndexOf('-', n.lastIndexOf('-') - 1))
+              : n);
     }
     return new Font(Font.SANS_SERIF, Font.BOLD, 12);
+  }
+
+  /**
+   * new Font(name, …) does not always find fonts the application registered at runtime via
+   * GraphicsEnvironment.registerFont (it falls back to Dialog). If the requested face did not
+   * resolve, look it up among the registered fonts by face name, then by family, and derive the
+   * requested style and size from it.
+   */
+  private static Font resolveRegistered(Font f, String requested) {
+    if (requested.equalsIgnoreCase(f.getFontName(java.util.Locale.ROOT))
+        || requested.equalsIgnoreCase(f.getFamily(java.util.Locale.ROOT))) {
+      return f;
+    }
+    Font byFamily = null;
+    for (Font candidate : java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+        .getAllFonts()) {
+      if (requested.equalsIgnoreCase(candidate.getFontName(java.util.Locale.ROOT))) {
+        return candidate.deriveFont(f.getStyle(), f.getSize2D());
+      }
+      if (byFamily == null
+          && requested.equalsIgnoreCase(candidate.getFamily(java.util.Locale.ROOT))) {
+        byFamily = candidate;
+      }
+    }
+    if (byFamily != null) {
+      return byFamily.deriveFont(f.getStyle(), f.getSize2D());
+    }
+    System.err.println("DefaultWindowDecoratorTheme: title font '" + requested
+        + "' not found, using " + f.getFontName());
+    return f;
   }
 
   private static final java.util.regex.Pattern FONT_SPEC =
