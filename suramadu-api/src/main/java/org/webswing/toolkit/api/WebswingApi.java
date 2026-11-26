@@ -45,7 +45,7 @@ public interface WebswingApi {
 
   /**
    * Check if connected web session user has role defined. If no user is connected null is returned.
-   * 
+   *
    * @param role name of role
    * @return True if user has the role, false if not. Null if no user is connected
    * @throws WebswingApiException if communication with server fails.
@@ -55,7 +55,7 @@ public interface WebswingApi {
   /**
    * Check if connected web session user has permission defined. If no user is connected null is
    * returned.
-   * 
+   *
    * @param permission name of permission
    * @return True if user has the permission, false if not. Null if no user is connected
    * @throws WebswingApiException if communication with server fails.
@@ -65,14 +65,14 @@ public interface WebswingApi {
   /**
    * Add listener to receive notifications when user (primary/mirror view) connects or disconnects
    * from session
-   * 
+   *
    * @param listener listener to add
    */
   public void addUserConnectionListener(WebswingUserListener listener);
 
   /**
    * Remove user listener
-   * 
+   *
    * @param listener listener to remove
    */
   public void removeUserConnectionListener(WebswingUserListener listener);
@@ -94,14 +94,14 @@ public interface WebswingApi {
    * to all windows). Otherwise listeners are fired. It is expected the result of listener execution
    * will exit the swing process. Otherwise the swing process will be forcefully terminated after
    * defined timeout (system property "webswing.waitForExit", default: 30000)
-   * 
+   *
    * @param listener listener to add
    */
   public void addShutdownListener(WebswingShutdownListener listener);
 
   /**
    * Remove shutdown listener
-   * 
+   *
    * @param listener listener to remove
    */
   public void removeShutdownListener(WebswingShutdownListener listener);
@@ -188,7 +188,7 @@ public interface WebswingApi {
    * the content to local clipboard. <br>
    * Typically used for customized clipboard integration, while the built-in integration is disabled
    * in configuration ("allowLocalClipboard" is false).
-   * 
+   *
    * @param content clipboard data to be sent to browser
    */
   public void sendClipboard(WebswingClipboardData content);
@@ -204,21 +204,21 @@ public interface WebswingApi {
 
   /**
    * Adds a WebswingBrowserActionListener to listen to javascript browser initiated events.
-   * 
+   *
    * @param listener The listener to add
    */
   public void addBrowserActionListener(WebActionListener listener);
 
   /**
    * Removed a WebswingBrowserActionListener.
-   * 
+   *
    * @param listener The listener to remove
    */
   public void removeBrowserActionListener(WebActionListener listener);
 
   /**
    * Sends an action event with optional data to the browser.
-   * 
+   *
    * @param actionName name of action to be sent
    * @param data string encoded data
    * @param binaryData binary data
@@ -227,7 +227,7 @@ public interface WebswingApi {
 
   /**
    * Sends an action event to a WebWindow, with optional data to the browser.
-   * 
+   *
    * @param webWindow window to recieve the action
    * @param actionName name of action to be sent
    * @param data string encoded data
@@ -238,7 +238,7 @@ public interface WebswingApi {
 
   /**
    * Creates an HtmlPanel component. Compositing window manager must be enabled in config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public HtmlPanel createHtmlPanel();
@@ -248,7 +248,7 @@ public interface WebswingApi {
    * Use this method to create an HtmlPanel inside a WebContainer parent container. This is required
    * for web container to correctly compute z-order of its child component canvases. Compositing
    * window manager must be enabled in config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public HtmlPanel createHtmlPanelForWebContainerComponent(Container webContainer,
@@ -257,7 +257,7 @@ public interface WebswingApi {
   /**
    * Registers given container to be a parent web container and all of its child components will be
    * rendered into separate canvases. Compositing window manager must be enabled in config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public void registerWebContainer(Container container);
@@ -276,7 +276,7 @@ public interface WebswingApi {
   /**
    * Toggle the dock state of a window. Compositing window manager must be enabled in config. Window
    * must be allowed to change the dock state according to config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() or isDockingEnabled(window)
    *         returns false
    */
@@ -285,7 +285,7 @@ public interface WebswingApi {
   /**
    * Toggle the dock state of a window. Compositing window manager must be enabled in config. Window
    * must be allowed to change the dock state according to config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() or isDockingEnabled(window)
    *         returns false
    */
@@ -294,7 +294,7 @@ public interface WebswingApi {
   /**
    * Check whether window is in undocked state. Compositing window manager must be enabled in
    * config.
-   * 
+   *
    * @throws IllegalArgumentException if isCompositingWindowManager() returns false
    */
   public boolean isUndocked(Window window);
@@ -308,7 +308,7 @@ public interface WebswingApi {
   /**
    * Register JFileChooser that should show Webswing integration toolbar if embedded in custom
    * window. Transparent mode is not available in case of custom window.
-   * 
+   *
    * @param fileChooser instance of file chooser
    * @param parent custom window that contains this filechooser
    */
@@ -414,6 +414,28 @@ public interface WebswingApi {
    */
   public default String registerWebFont(byte[] ttf) {
     return null;
+  }
+
+  // ===========================================================================
+  // Screenshots
+  // ===========================================================================
+
+  /**
+   * Puts a PNG screenshot of the given window on the user's local clipboard, as the browser shows
+   * it (title bar included, at the display's full resolution) — e.g. for a "Copy screenshot" button
+   * in an error dialog. Users can also press Ctrl+Alt+S (window) or Ctrl+Alt+Shift+S (all open
+   * windows) in the browser.
+   *
+   * <p>
+   * Without a user gesture in the browser, the clipboard write succeeds silently where the browser
+   * permits it (Chromium); elsewhere the browser shows the image with a copy/download bar.
+   *
+   * @param window the window to capture; {@code null} for the active window
+   * @param allWindows capture all open application windows, with {@code window} on top (e.g. an
+   *        error dialog together with the window behind it)
+   */
+  public default void copyScreenshot(Window window, boolean allWindows) {
+    // no browser in this implementation: nothing to capture into
   }
 
   // ===========================================================================

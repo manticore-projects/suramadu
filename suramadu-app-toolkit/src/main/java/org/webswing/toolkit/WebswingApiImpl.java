@@ -40,6 +40,7 @@ import org.webswing.util.NamedThreadFactory;
 
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
+import javax.swing.SwingUtilities;
 import java.awt.Container;
 import java.awt.Toolkit;
 import java.awt.Window;
@@ -221,6 +222,10 @@ public class WebswingApiImpl implements WebswingApi {
           }
         }
       });
+    } else if (msg instanceof ActionEventMsgIn shot
+        && SCREENSHOT_ACTION.equals(shot.getActionName())) {
+      // reserved browser request (screenshot hotkey); never reaches application listeners
+      sendScreenshot(null, "owners".equals(shot.getData()), true);
     } else if (msg instanceof ActionEventMsgIn action) {
       if (action != null) {
         apiProcessor.submit(() -> {
@@ -701,6 +706,94 @@ public class WebswingApiImpl implements WebswingApi {
   public void removePropertyChangeListener(String keyPrefix, PropertyChangeListener listener) {
     if (listener != null) {
       propertyListeners.remove(new PrefixListener(keyPrefix == null ? "" : keyPrefix, listener));
+    }
+  }
+
+  // ===========================================================================
+  // Screenshots
+  // ===========================================================================
+
+  /** Reserved action name shared with the browser (suramadu-base.ts). */
+  static final String SCREENSHOT_ACTION = "suramadu.screenshot";
+
+  @Override
+  public void copyScreenshot(Window window, boolean allWindows) {
+    sendScreenshot(window, allWindows, false);
+  }
+
+  /**
+   * Tells the browser which windows to capture: GUIDs and screen bounds, bottom of the stack first.
+   * The browser composes the image from its own canvases, so it is exactly what the user sees. Runs
+   * on the EDT, the only thread that may walk the window hierarchy safely.
+   *
+   * @param window window to capture, {@code null} for the active window
+   * @param allWindows all showing application windows, with the target on top
+   * @param requested true when answering the browser's hotkey request
+   */
+  private void sendScreenshot(Window window, boolean allWindows, boolean requested) {
+    SwingUtilities.invokeLater(() -> {
+      StringBuilder json =
+          new StringBuilder("{\"requested\":").append(requested).append(",\"windows\":[");
+      try {
+        Window target = window;
+        if (target == null) {
+          Object active = Util.getWebToolkit().getWindowManager().getActiveWindow();
+          target = active instanceof Window w ? w : null;
+        }
+        List<Window> windows = new ArrayList<>();
+        if (allWindows) {
+          // all showing application windows. Not via the owner chain: dialogs created without a
+          // parent are owned by Swing's invisible shared owner frame, so the window behind them
+          // is no owner at all. Bottom to top: every other window in creation order, then the
+          // target with its own popups, so whatever the user was working in ends up on top.
+          List<Window> front = new ArrayList<>();
+          if (target != null) {
+            collectShowing(target, front);
+          }
+          for (Window w : Window.getWindows()) {
+            if (w.isShowing() && !front.contains(w)) {
+              windows.add(w);
+            }
+          }
+          windows.addAll(front);
+        } else if (target != null) {
+          collectShowing(target, windows); // the window and its popups, owner before owned
+        }
+        AppLogger.info("Screenshot: " + (allWindows ? "all windows" : "active window") + ", target="
+            + (target != null ? target.getClass().getSimpleName() : "none") + ", windows="
+            + windows.size());
+        {
+          boolean first = true;
+          for (Window w : windows) {
+            Object peer = WebToolkit.targetToPeer(w);
+            if (!(peer instanceof WebWindowPeer webPeer) || webPeer.getGuid() == null) {
+              continue;
+            }
+            java.awt.Rectangle b = w.getBounds();
+            json.append(first ? "" : ",").append("{\"id\":\"")
+                .append(webPeer.getGuid().replace("\\", "\\\\").replace("\"", "\\\""))
+                .append("\",\"x\":").append(b.x).append(",\"y\":").append(b.y).append(",\"w\":")
+                .append(b.width).append(",\"h\":").append(b.height).append('}');
+            first = false;
+          }
+        }
+      } catch (RuntimeException e) {
+        AppLogger.error("Screenshot: could not determine the windows to capture", e);
+      }
+      json.append("]}");
+      // an empty list makes the browser capture the whole desktop
+      sendActionEvent((String) null, SCREENSHOT_ACTION, json.toString(), null);
+    });
+  }
+
+  /** The window and its showing owned windows (popups, dialogs), owners before owned. */
+  private static void collectShowing(Window w, List<Window> out) {
+    if (!w.isShowing()) {
+      return;
+    }
+    out.add(w);
+    for (Window owned : w.getOwnedWindows()) {
+      collectShowing(owned, out);
     }
   }
 

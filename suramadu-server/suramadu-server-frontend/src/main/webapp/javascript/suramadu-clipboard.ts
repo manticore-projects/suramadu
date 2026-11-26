@@ -18,6 +18,7 @@ export interface IClipboardService {
     'clipboard.paste': (event: ClipboardEvent, special: boolean) => void;
     'clipboard.displayCopyBar': (data: appFrameProtoOut.ICopyEventMsgOutProto) => void;
     'clipboard.displayPasteDialog': (requestCtx: appFrameProtoOut.IPasteRequestMsgOutProto) => void;
+    'clipboard.copyImage': (image: Promise<Blob>, userGesture: boolean) => void;
     'clipboard.dispose': () => void;
 }
 
@@ -75,6 +76,7 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
             'clipboard.paste': this.paste,
             'clipboard.displayCopyBar': this.displayCopyBar,
             'clipboard.displayPasteDialog': this.displayPasteDialog,
+            'clipboard.copyImage': this.copyImage,
             'clipboard.dispose': this.close
         }
     }
@@ -254,6 +256,44 @@ export class ClipboardModule extends ModuleDef<typeof clipboardInjectable, IClip
     private textToHtml(text: string): string {
         const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         return '<pre>' + escaped + '</pre>';
+    }
+
+    /* ---------- screenshot (PNG) to the clipboard ---------- */
+
+    /**
+     * Puts a PNG on the local clipboard.
+     *
+     * userGesture=true: called synchronously inside a key/click handler. The ClipboardItem is
+     * created NOW with the still-pending image promise, so the transient user activation is used
+     * even though the image is produced asynchronously (same technique as the direct Ctrl+C copy).
+     *
+     * userGesture=false: triggered by the Swing application (no gesture): a silent write, which
+     * Chromium grants to the focused tab. Everywhere else, and over plain HTTP, the existing copy
+     * bar shows the image as a thumbnail with a download link instead.
+     */
+    public copyImage(image: Promise<Blob>, userGesture: boolean) {
+        image.catch(() => undefined); // aborted/timed-out request: no unhandled-rejection noise
+        const fallback = () => {
+            image.then((blob) => blob.arrayBuffer())
+                .then((buf) => this.showCopyBar({ img: new Uint8Array(buf) }))
+                .catch(() => undefined);
+        };
+        if (!this.directCopySupported()) {
+            fallback();
+            return;
+        }
+        try {
+            const write = userGesture
+                // tslint:disable-next-line:no-any
+                ? navigator.clipboard.write([new ClipboardItem({ 'image/png': image } as any)])
+                : image.then((blob) => navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]));
+            write.catch((e: Error) => {
+                console.debug('Suramadu: screenshot clipboard write not permitted, showing copy bar.', e);
+                fallback();
+            });
+        } catch (e) {
+            fallback();
+        }
     }
 
     /* ------------------------------------------------------------ */

@@ -15,7 +15,8 @@ export const inputInjectable = {
     isAccessibilityEnabled: 'accessible.isEnabled' as const,
     toggleAccessibility: 'accessible.toggle' as const,
     focusInput: 'focusManager.focusInput' as const,
-    inputConfig: 'input.config' as const
+    inputConfig: 'input.config' as const,
+    requestScreenshot: 'base.requestScreenshot' as const
 }
 
 export interface IInputService {
@@ -441,9 +442,38 @@ export class InputModule extends ModuleDef<typeof inputInjectable, IInputService
         return false;
     }
 
+    /** True between keydown and keyup of the screenshot hotkey: Swing must see neither. */
+    private screenshotKeyDown = false;
+
+    /**
+     * Ctrl+Alt+S = active window, Ctrl+Alt+Shift+S = with owner window and popups. AltGr is
+     * reported as Ctrl+Alt on Windows and types characters with S in some layouts (Polish "s"
+     * acute, German capital sharp s), so it is excluded via the AltGraph modifier state.
+     * Off switch: screenshot: false in the client configuration.
+     */
+    private isScreenshotHotkey(event: KeyboardEvent) {
+        // tslint:disable-next-line:no-any
+        if ((this.api.cfg as any).screenshot === false || this.api.cfg.mirror) {
+            return false;
+        }
+        const isS = event.code === 'KeyS' || event.keyCode === 83;
+        const altGraph = typeof event.getModifierState === 'function' && event.getModifierState('AltGraph');
+        return isS && event.ctrlKey && event.altKey && !event.metaKey && !altGraph;
+    }
+
     private keyDownHandler(event: KeyboardEvent) {
         if (this.api.cfg.touchMode) {
             return;
+        }
+
+        if (this.isScreenshotHotkey(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) {
+                this.api.requestScreenshot(event.shiftKey);
+            }
+            this.screenshotKeyDown = true;
+            return false;
         }
 
         const functionKeys = [9/*tab*/, 12/*Numpad5*/, 16/*Shift*/, 17/*ctrl*/, 18/*alt*/, 19/*pause*/, 20/*CapsLock*/, 27/*esc*/,
@@ -515,6 +545,12 @@ export class InputModule extends ModuleDef<typeof inputInjectable, IInputService
             return;
         }
 
+        if (this.screenshotKeyDown) { // Firefox still fires keypress for Ctrl+Alt+S
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+        }
+
         const keyevt = this.getKBKey(KeyEventType.keypress, event);
         if (!this.isClipboardEvent(keyevt)) { // cut copy paste handled separately
             event.preventDefault();
@@ -539,6 +575,13 @@ export class InputModule extends ModuleDef<typeof inputInjectable, IInputService
     private keyUpHandler(event: KeyboardEvent) {
         if (this.api.cfg.touchMode) {
             return;
+        }
+
+        if (this.screenshotKeyDown && (event.code === 'KeyS' || event.keyCode === 83)) {
+            this.screenshotKeyDown = false;
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
         }
 
         const keyevt = this.getKBKey(KeyEventType.keyup, event);

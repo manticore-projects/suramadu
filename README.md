@@ -48,11 +48,20 @@ The complete corresponding source for every released version is in this reposito
 
 ## What's New
 
-### Runtime Window Theming, Web Fonts & Host Properties (27.4)
+### Screenshots, Runtime Theming, Web Fonts & Host Properties (27.4)
 
-The application can now configure Suramadu from its own code at runtime, no `jvmArgs` or
+Users can put a screenshot of any window on the clipboard with one key press, and the
+application can now configure Suramadu from its own code at runtime, no `jvmArgs` or
 `fontConfig` needed.
 
+- **Screenshot to the clipboard.** `Ctrl+Alt+S` copies the active window, title bar included, as
+  a PNG at the display's full resolution: ready to paste into an e-mail or a ticket.
+  `Ctrl+Alt+Shift+S` captures all open windows of the application with the active one on top,
+  e.g. an error dialog together with the window behind it. The image is composed in the browser from what the user actually
+  sees; AltGr combinations are not affected. Applications can offer the same as a button
+  (e.g. in an error dialog) via `copyScreenshot(window, allWindows)`. Where the browser does not
+  permit a direct clipboard write, or on plain HTTP, the image is shown in the copy bar with a
+  download link instead. Off switch: `screenshot: false`.
 - **Web fonts from the application.** `registerWebFont(byte[] ttf)` hands a TrueType font to
   DirectDraw, which then renders its text natively in the browser instead of as glyph images.
   Fonts are identified by content hash and by the face name parsed from the same bytes the
@@ -89,9 +98,10 @@ The application can now configure Suramadu from its own code at runtime, no `jvm
 ```java
 WebswingApi api = WebswingUtil.getWebswingApi();   // null outside Suramadu
 if (api != null) {
-    api.setWindowTheme(navy, gray, orange, panelBg, titleFont);
+        api.setWindowTheme(navy, gray, orange, panelBg, titleFont);
     api.setProperty(WebswingApi.WINDOW_THEME_TITLE_HEIGHT, "24");  // before the first window
     api.registerWebFont(ttfBytes);                                  // before first paint
+    api.copyScreenshot(errorDialog, true);                          // e.g. from a button
 }
 ```
 

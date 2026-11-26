@@ -52,6 +52,7 @@ export const baseInjectable = {
 	redirect: 'files.redirect' as const,
 	displayCopyBar: 'clipboard.displayCopyBar' as const,
 	displayPasteDialog: 'clipboard.displayPasteDialog' as const,
+	copyImage: 'clipboard.copyImage' as const,
 	processJsLink: 'jslink.process' as const,
 	playbackInfo: 'playback.playbackInfo' as const,
 	paintDoneCallback: 'base.paintDoneCallback' as const,
@@ -89,7 +90,15 @@ export interface IBaseService {
 	'base.getMainWindowVisibilityState': () => DocumentVisibilityState,
 	'base.closeWindow': (id: string) => void
 	'base.startNewSessionOnShutdown': () => void
+	'base.requestScreenshot': (withOwners: boolean) => void
 }
+
+/** Reserved action name of the screenshot request/reply; never reaches application listeners. */
+const SCREENSHOT_ACTION = "suramadu.screenshot";
+/** How long a hotkey screenshot waits for the application's window list. */
+const SCREENSHOT_TIMEOUT_MS = 5000;
+
+interface IScreenshotWindow { id: string; x: number; y: number; w: number; h: number; }
 
 export type IDockableWindow = Window & typeof globalThis & {
     inputHandler: HTMLInputElement
@@ -136,6 +145,8 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 	private directDraw?: WebswingDirectDraw;
 	private ddWorker: DirectDrawWorkerClient | null = null;
 	private compositingWM = false;
+	/** Hotkey screenshot waiting for the application's window list (one at a time). */
+	private pendingScreenshot?: { resolve: (b: Blob) => void, reject: (e: Error) => void, timer: number };
 	private audio: {[K: string]: IAudioClip} = {};
 	private focusedUndockedWindow: Window | null = null;
 	private dockResizeInterval = 250;
@@ -163,6 +174,7 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 			'base.getWindowById': this.getWindowById,
 			'base.performAction': this.performAction,
 			'base.handleActionEvent': this.handleActionEvent,
+			'base.requestScreenshot': this.requestScreenshot,
 			'base.hasUndockedWindows': this.hasUndockedWindows,
 			'base.getFocusedWindow': this.getFocusedWindow,
 			'base.getAllWindows': this.getAllWindows,
@@ -682,7 +694,9 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 		}
 		if (data.actionEvent != null && this.api.cfg.hasControl && !this.api.cfg.recordingPlayback) {
 			try {
-				if (data.actionEvent.windowId && this.windowImageHolders[data.actionEvent.windowId]) {
+				if (data.actionEvent.actionName === SCREENSHOT_ACTION) {
+					this.handleScreenshotReply(data.actionEvent.data);
+				} else if (data.actionEvent.windowId && this.windowImageHolders[data.actionEvent.windowId]) {
 					this.windowImageHolders[data.actionEvent.windowId].handleActionEvent(data.actionEvent.actionName, data.actionEvent.data, data.actionEvent.binaryData);
 				} else {
 					this.api.handleActionEvent(data.actionEvent.actionName, data.actionEvent.data, data.actionEvent.binaryData);
@@ -2115,6 +2129,107 @@ export class BaseModule extends ModuleDef<typeof baseInjectable, IBaseService> {
 				data: options.data || "",
 				binaryData: options.binaryData || null,
 				windowId: options.windowId || ""
+			}
+		});
+	}
+
+	/* ---------- screenshot ---------- */
+
+	/**
+	 * Hotkey entry point; MUST be called synchronously inside the key handler: the clipboard write
+	 * starts now (user activation), the image follows once the application has answered which
+	 * windows to capture.
+	 */
+	public requestScreenshot(withOwners: boolean) {
+		if (this.pendingScreenshot != null) {
+			this.pendingScreenshot.reject(new Error("Suramadu: screenshot superseded"));
+			clearTimeout(this.pendingScreenshot.timer);
+			this.pendingScreenshot = undefined;
+		}
+		let resolve!: (b: Blob) => void;
+		let reject!: (e: Error) => void;
+		const image = new Promise<Blob>((res, rej) => { resolve = res; reject = rej; });
+		const timer = window.setTimeout(() => {
+			if (this.pendingScreenshot != null) {
+				this.pendingScreenshot.reject(new Error("Suramadu: screenshot request timed out"));
+				this.pendingScreenshot = undefined;
+			}
+		}, SCREENSHOT_TIMEOUT_MS);
+		this.pendingScreenshot = { resolve, reject, timer };
+
+		this.api.copyImage(image, true);
+		this.performAction({ actionName: SCREENSHOT_ACTION, data: withOwners ? "owners" : "window" });
+	}
+
+	/**
+	 * Reply from the application: {"requested":bool,"windows":[{id,x,y,w,h}...]} in stacking order
+	 * (bottom first), screen coordinates in CSS pixels. requested=false is an application-initiated
+	 * screenshot (WebswingApi.copyScreenshot) without a pending hotkey request.
+	 */
+	private handleScreenshotReply(json?: string | null) {
+		let reply: { requested?: boolean, windows?: IScreenshotWindow[] } = {};
+		try {
+			reply = JSON.parse(json || "{}");
+		} catch (e) {
+			console.error("Suramadu: malformed screenshot reply", e);
+		}
+		const image = this.renderScreenshot(reply.windows || []);
+		if (reply.requested) {
+			const pending = this.pendingScreenshot;
+			if (pending != null) {
+				this.pendingScreenshot = undefined;
+				clearTimeout(pending.timer);
+				image.then(pending.resolve, pending.reject);
+			}
+		} else {
+			this.api.copyImage(image, false);
+		}
+	}
+
+	/** Composes the listed windows from what the browser actually shows, at device resolution. */
+	private renderScreenshot(windows: IScreenshotWindow[]): Promise<Blob> {
+		return new Promise<Blob>((resolve, reject) => {
+			try {
+				const dpr = getDpr();
+				const main = this.api.getCanvas();
+				let wins = windows.filter((w) => w.w > 0 && w.h > 0);
+				if (wins.length === 0) {
+					// no active window known: the whole desktop
+					wins = [{ id: "", x: 0, y: 0, w: main.clientWidth || main.width / dpr, h: main.clientHeight || main.height / dpr }];
+				}
+				const x0 = Math.min(...wins.map((w) => w.x));
+				const y0 = Math.min(...wins.map((w) => w.y));
+				const x1 = Math.max(...wins.map((w) => w.x + w.w));
+				const y1 = Math.max(...wins.map((w) => w.y + w.h));
+
+				const out = document.createElement("canvas");
+				out.width = Math.max(1, Math.round((x1 - x0) * dpr));
+				out.height = Math.max(1, Math.round((y1 - y0) * dpr));
+				const ctx = out.getContext("2d")!;
+				ctx.imageSmoothingQuality = "high";
+
+				if (this.compositingWM) {
+					// one canvas per window: draw only the listed windows, bottom to top
+					for (const w of wins) {
+						const holder = w.id ? this.windowImageHolders[w.id] : undefined;
+						if (holder == null || holder.htmlWindow) {
+							continue;
+						}
+						const src = holder.element as HTMLCanvasElement;
+						if (src.width > 0 && src.height > 0) {
+							ctx.drawImage(src, 0, 0, src.width, src.height,
+								(w.x - x0) * dpr, (w.y - y0) * dpr, w.w * dpr, w.h * dpr);
+						}
+					}
+				} else {
+					// single desktop canvas: crop the region (shows exactly what the user sees)
+					const scale = main.clientWidth > 0 ? main.width / main.clientWidth : dpr;
+					ctx.drawImage(main, x0 * scale, y0 * scale, (x1 - x0) * scale, (y1 - y0) * scale,
+						0, 0, out.width, out.height);
+				}
+				out.toBlob((blob) => blob != null ? resolve(blob) : reject(new Error("Suramadu: screenshot encoding failed")), "image/png");
+			} catch (e) {
+				reject(e as Error);
 			}
 		});
 	}
